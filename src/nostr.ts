@@ -236,8 +236,8 @@ export async function fetchTrendingNotes(): Promise<LocatedEvent[]> {
   }
 
   try {
-    const fallback = await fetchTrendingNotesFromWineFallback();
-    if (fallback.length > 0) return fallback;
+    // Successful fallback (including empty) is the feed state — don't mask as relay error.
+    return await fetchTrendingNotesFromWineFallback();
   } catch {
     // Prefer the original relay error if hydration also fails.
   }
