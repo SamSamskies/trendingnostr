@@ -20,6 +20,7 @@ import {
   fetchTrendingNotes,
   formatCreateAtDate,
   getKind0Profiles,
+  readCachedKind0Profiles,
   WINDOW_PAGE_SIZE,
   type LocatedEvent,
 } from "./nostr";
@@ -167,37 +168,49 @@ export default function App() {
 
   const visibleEvents = events.slice(0, currentDataLength);
 
+  // Prefetch authors + mentions for the full feed so scrolled-in notes already
+  // have names/avatars (cache paints instantly; relays fill gaps in the background).
   useEffect(() => {
-    const visible = events.slice(0, currentDataLength);
-    if (visible.length === 0) return;
+    if (events.length === 0) return;
 
     const identities = addIdentities(
-      collectMentionIdentities(visible.map((note) => note.content)),
-      visible.map((note) => ({
+      collectMentionIdentities(events.map((note) => note.content)),
+      events.map((note) => ({
         pubkey: note.pubkey,
         relayHints: note.seenOn.filter((url) => url.startsWith("wss://")),
       }))
     );
 
+    const pubkeys = identities.map((id) => id.pubkey);
+    const mergeProfiles = (
+      prev: Record<string, Kind0Profile>,
+      found: Record<string, Kind0Profile>
+    ) => {
+      let changed = false;
+      const next = { ...prev };
+      for (const [pubkey, profile] of Object.entries(found)) {
+        if (prev[pubkey] === profile) continue;
+        next[pubkey] = profile;
+        changed = true;
+      }
+      return changed ? next : prev;
+    };
+
+    const cached = readCachedKind0Profiles(pubkeys);
+    if (Object.keys(cached).length > 0) {
+      setProfiles((prev) => mergeProfiles(prev, cached));
+    }
+
     let cancelled = false;
-    void getKind0Profiles(identities.map((id) => id.pubkey)).then((found) => {
+    void getKind0Profiles(pubkeys).then((found) => {
       if (cancelled) return;
-      setProfiles((prev) => {
-        let changed = false;
-        const next = { ...prev };
-        for (const [pubkey, profile] of Object.entries(found)) {
-          if (prev[pubkey] === profile) continue;
-          next[pubkey] = profile;
-          changed = true;
-        }
-        return changed ? next : prev;
-      });
+      setProfiles((prev) => mergeProfiles(prev, found));
     });
 
     return () => {
       cancelled = true;
     };
-  }, [events, currentDataLength]);
+  }, [events]);
 
   return (
     <main className="page">
