@@ -103,7 +103,13 @@ function RepostIcon() {
   );
 }
 
-function NoteEngagementStats({ stats }: { stats: NoteEngagement }) {
+function NoteEngagementStats({
+  stats,
+  onOpen,
+}: {
+  stats: NoteEngagement;
+  onOpen: () => void;
+}) {
   // Order matches common Nostr clients (e.g. Primal): reply, zap, reaction, repost.
   const items = [
     {
@@ -132,10 +138,21 @@ function NoteEngagementStats({ stats }: { stats: NoteEngagement }) {
     },
   ];
 
+  const summary = items
+    .map((item) => `${item.value.toLocaleString()} ${item.label}`)
+    .join(", ");
+
   return (
-    <ul className="note-stats" aria-label="Engagement">
+    <button
+      type="button"
+      className="note-stats"
+      aria-haspopup="dialog"
+      aria-label={`Open this note in… Engagement: ${summary}`}
+      title="Open this note in…"
+      onClick={onOpen}
+    >
       {items.map((item) => (
-        <li
+        <span
           key={item.key}
           className="note-stat"
           title={`${item.value.toLocaleString()} ${item.label}`}
@@ -144,12 +161,9 @@ function NoteEngagementStats({ stats }: { stats: NoteEngagement }) {
           <span className="note-stat-value" aria-hidden="true">
             {formatEngagementCount(item.value)}
           </span>
-          <span className="visually-hidden">
-            {item.value.toLocaleString()} {item.label}
-          </span>
-        </li>
+        </span>
       ))}
-    </ul>
+    </button>
   );
 }
 
@@ -396,6 +410,16 @@ export default function App() {
           <ol className="results">
             {visibleEvents.map((note) => {
               const engagement = engagementById[note.id.toLowerCase()];
+              const openNote = () => {
+                try {
+                  setOpenTarget({
+                    kind: "note",
+                    code: encodeNevent(note),
+                  });
+                } catch {
+                  /* ignore encode errors */
+                }
+              };
               return (
                 <li key={note.id} className="note">
                   <button
@@ -404,16 +428,7 @@ export default function App() {
                     aria-haspopup="dialog"
                     aria-label="Open this note in…"
                     title="Open this note in…"
-                    onClick={() => {
-                      try {
-                        setOpenTarget({
-                          kind: "note",
-                          code: encodeNevent(note),
-                        });
-                      } catch {
-                        /* ignore encode errors */
-                      }
-                    }}
+                    onClick={openNote}
                   >
                     <NoteMenuIcon />
                   </button>
@@ -434,7 +449,7 @@ export default function App() {
                     />
                   </NoteBody>
                   {engagement ? (
-                    <NoteEngagementStats stats={engagement} />
+                    <NoteEngagementStats stats={engagement} onOpen={openNote} />
                   ) : null}
                 </li>
               );

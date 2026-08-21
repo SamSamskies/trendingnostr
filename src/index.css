@@ -321,14 +321,27 @@ a:focus-visible {
 }
 
 .note-stats {
-  list-style: none;
   display: flex;
   align-items: center;
   flex-wrap: wrap;
   gap: 0.85rem 1.15rem;
+  width: 100%;
   margin: 0.85rem 0 0;
   padding: 0.75rem 0 0;
+  border: none;
   border-top: 1px solid var(--line);
+  border-radius: 0;
+  background: none;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  color: var(--muted);
+  transition: color 0.15s ease;
+}
+
+.note-stats:hover,
+.note-stats:focus-visible {
+  color: var(--ink);
 }
 
 .note-stat {
@@ -339,7 +352,6 @@ a:focus-visible {
   font-family: var(--font-mono);
   font-size: 0.78rem;
   line-height: 1;
-  color: var(--muted);
 }
 
 .note-stat-icon {
