@@ -4,10 +4,11 @@ import { useLayoutEffect, useRef, useState, type ReactNode } from "react";
 const COLLAPSED_MAX_HEIGHT_PX = 440;
 
 /**
- * Lazy images/videos often have 0 height until loaded. Estimate a 4:5 box so
- * overflow is detected before media loads (avoids expand-then-collapse).
- * Only add the deficit vs current layout height — scrollHeight may already
- * include a partial box while complete/metadata is still false.
+ * Lazy images/videos often have 0 height until loaded. Estimate a 9:16 box
+ * (tall portrait / story) so overflow is detected before media loads and we
+ * avoid expand-then-collapse. Prefer overestimating vs understating taller
+ * media. Only add the deficit vs current layout height — scrollHeight may
+ * already include a partial box while complete/metadata is still false.
  */
 function unloadedMediaExtraHeight(root: HTMLElement): number {
   let extra = 0;
@@ -16,7 +17,7 @@ function unloadedMediaExtraHeight(root: HTMLElement): number {
     if (img.complete) continue;
     const width = img.clientWidth || root.clientWidth;
     if (width <= 0) continue;
-    extra += Math.max(0, (width * 5) / 4 - img.clientHeight);
+    extra += Math.max(0, (width * 16) / 9 - img.clientHeight);
   }
 
   for (const video of root.querySelectorAll<HTMLVideoElement>(
@@ -25,7 +26,7 @@ function unloadedMediaExtraHeight(root: HTMLElement): number {
     if (video.readyState >= HTMLMediaElement.HAVE_METADATA) continue;
     const width = video.clientWidth || root.clientWidth;
     if (width <= 0) continue;
-    extra += Math.max(0, (width * 5) / 4 - video.clientHeight);
+    extra += Math.max(0, (width * 16) / 9 - video.clientHeight);
   }
 
   return extra;
