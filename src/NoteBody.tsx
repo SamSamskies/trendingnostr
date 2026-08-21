@@ -135,8 +135,19 @@ export function NoteBody({ children }: { children: ReactNode }) {
 
   return (
     <div className={`note-body${collapsed ? " note-body-collapsed" : ""}`}>
-      <div ref={contentRef} className="note-body-content">
-        {children}
+      <div className="note-body-clip">
+        <div ref={contentRef} className="note-body-content">
+          {children}
+        </div>
+        {collapsed ? (
+          <button
+            type="button"
+            className="note-body-fade"
+            aria-label="Show more"
+            tabIndex={-1}
+            onClick={() => setExpanded(true)}
+          />
+        ) : null}
       </div>
       {overflows ? (
         <button
