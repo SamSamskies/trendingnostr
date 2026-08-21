@@ -56,6 +56,10 @@ a:focus-visible {
 }
 
 .hero {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
   padding: 0 0 1.5rem;
 }
 
@@ -66,6 +70,22 @@ a:focus-visible {
   font-size: clamp(1.85rem, 5.5vw, 2.45rem);
   letter-spacing: -0.04em;
   line-height: 1.05;
+}
+
+.hero-github {
+  flex-shrink: 0;
+  display: inline-flex;
+  color: var(--muted);
+  transition: color 0.15s ease;
+}
+
+.hero-github:hover {
+  color: var(--ink);
+}
+
+.hero-github svg {
+  width: 1.35rem;
+  height: 1.35rem;
 }
 
 .status {
