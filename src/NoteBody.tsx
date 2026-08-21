@@ -3,6 +3,30 @@ import { useLayoutEffect, useRef, useState, type ReactNode } from "react";
 /** Must match `--note-body-collapsed-max` in index.css. */
 const COLLAPSED_MAX_HEIGHT_PX = 440;
 
+/**
+ * Lazy images/videos often have 0 height until loaded. Estimate a 4:5 box so
+ * overflow is detected before media loads (avoids expand-then-collapse).
+ */
+function unloadedMediaExtraHeight(root: HTMLElement): number {
+  let extra = 0;
+
+  for (const img of root.querySelectorAll<HTMLImageElement>("img.note-image")) {
+    if (img.complete) continue;
+    const width = img.clientWidth || root.clientWidth;
+    if (width > 0) extra += (width * 5) / 4;
+  }
+
+  for (const video of root.querySelectorAll<HTMLVideoElement>(
+    "video.note-video"
+  )) {
+    if (video.readyState >= HTMLMediaElement.HAVE_METADATA) continue;
+    const width = video.clientWidth || root.clientWidth;
+    if (width > 0) extra += (width * 5) / 4;
+  }
+
+  return extra;
+}
+
 export function NoteBody({ children }: { children: ReactNode }) {
   const contentRef = useRef<HTMLDivElement>(null);
   const [expanded, setExpanded] = useState(false);
@@ -14,13 +38,25 @@ export function NoteBody({ children }: { children: ReactNode }) {
     if (!el) return;
 
     const measure = () => {
-      setOverflows(el.scrollHeight > COLLAPSED_MAX_HEIGHT_PX + 1);
+      const height = el.scrollHeight + unloadedMediaExtraHeight(el);
+      setOverflows(height > COLLAPSED_MAX_HEIGHT_PX + 1);
     };
 
     measure();
     const observer = new ResizeObserver(measure);
     observer.observe(el);
-    return () => observer.disconnect();
+
+    // Lazy media may not resize the container until load/error; remeasure then.
+    el.addEventListener("load", measure, true);
+    el.addEventListener("error", measure, true);
+    el.addEventListener("loadedmetadata", measure, true);
+
+    return () => {
+      observer.disconnect();
+      el.removeEventListener("load", measure, true);
+      el.removeEventListener("error", measure, true);
+      el.removeEventListener("loadedmetadata", measure, true);
+    };
   }, []);
 
   const collapsed = overflows && !expanded;
