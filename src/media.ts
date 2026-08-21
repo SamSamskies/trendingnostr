@@ -94,9 +94,16 @@ export function blossomHashFromUrl(url: string): string | undefined {
   }
 }
 
+/** Accept full MIME types and bare types some clients send (`jpeg`, `png`, `mp4`). */
 function mimeKind(mime: string): MediaKind | null {
-  if (mime.startsWith("image/")) return "image";
-  if (mime.startsWith("video/")) return "video";
+  const normalized = mime.trim().toLowerCase();
+  if (!normalized) return null;
+  if (normalized.startsWith("image/") || IMAGE_EXTENSIONS.has(normalized)) {
+    return "image";
+  }
+  if (normalized.startsWith("video/") || VIDEO_EXTENSIONS.has(normalized)) {
+    return "video";
+  }
   return null;
 }
 
@@ -122,8 +129,9 @@ export function classifyUrl(url: string, tags: string[][] = []): MediaKind | nul
     if (!entry.url || !urlsMatch(normalized, entry.url)) continue;
     if (entry.mime) {
       const fromMime = mimeKind(entry.mime);
+      // Known media mime wins; unknown/non-media mime falls through to URL heuristics
+      // (Primal iOS has sent bare `jpeg` / `png` instead of `image/jpeg`).
       if (fromMime) return fromMime;
-      return null;
     }
   }
 
