@@ -145,7 +145,12 @@ export function NoteBody({ children }: { children: ReactNode }) {
             className="note-body-fade"
             aria-label="Show more"
             tabIndex={-1}
-            onClick={() => setExpanded(true)}
+            onClick={() => {
+              setExpanded(true);
+              // This overlay unmounts on expand; move focus to the toggle so
+              // it does not fall back to document.body.
+              toggleRef.current?.focus();
+            }}
           />
         ) : null}
       </div>
