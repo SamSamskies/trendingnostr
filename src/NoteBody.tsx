@@ -27,8 +27,16 @@ function unloadedMediaExtraHeight(root: HTMLElement): number {
   return extra;
 }
 
+function isClippedByOverflow(content: HTMLElement, target: HTMLElement): boolean {
+  const contentRect = content.getBoundingClientRect();
+  const targetRect = target.getBoundingClientRect();
+  // Fully or partially below the visible max-height clip.
+  return targetRect.bottom > contentRect.bottom + 1;
+}
+
 export function NoteBody({ children }: { children: ReactNode }) {
   const contentRef = useRef<HTMLDivElement>(null);
+  const toggleRef = useRef<HTMLButtonElement>(null);
   const [expanded, setExpanded] = useState(false);
   const [overflows, setOverflows] = useState(false);
 
@@ -61,6 +69,24 @@ export function NoteBody({ children }: { children: ReactNode }) {
 
   const collapsed = overflows && !expanded;
 
+  // Overflow:hidden hides clipped links visually but leaves them in the tab order.
+  // Send focus to "Show more" when Tab lands on content below the cutoff.
+  useLayoutEffect(() => {
+    if (!collapsed) return;
+    const content = contentRef.current;
+    if (!content) return;
+
+    const onFocusIn = (event: FocusEvent) => {
+      const target = event.target;
+      if (!(target instanceof HTMLElement) || !content.contains(target)) return;
+      if (target === content || !isClippedByOverflow(content, target)) return;
+      toggleRef.current?.focus();
+    };
+
+    content.addEventListener("focusin", onFocusIn);
+    return () => content.removeEventListener("focusin", onFocusIn);
+  }, [collapsed]);
+
   return (
     <div className={`note-body${collapsed ? " note-body-collapsed" : ""}`}>
       <div ref={contentRef} className="note-body-content">
@@ -68,6 +94,7 @@ export function NoteBody({ children }: { children: ReactNode }) {
       </div>
       {overflows ? (
         <button
+          ref={toggleRef}
           type="button"
           className="note-body-toggle"
           aria-expanded={expanded}
