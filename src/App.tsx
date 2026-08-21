@@ -220,11 +220,16 @@ export default function App() {
       </header>
 
       {loading ? (
-        <ol className="results" aria-busy="true" aria-label="Loading trending notes">
-          {SKELETON_LINE_COUNTS.map((lines, index) => (
-            <NoteSkeleton key={index} lines={lines} />
-          ))}
-        </ol>
+        <>
+          <p className="visually-hidden" role="status">
+            Loading trending notes…
+          </p>
+          <ol className="results" aria-hidden="true">
+            {SKELETON_LINE_COUNTS.map((lines, index) => (
+              <NoteSkeleton key={index} lines={lines} />
+            ))}
+          </ol>
+        </>
       ) : null}
 
       {!loading && error ? (
