@@ -11,9 +11,59 @@ export const PROFILE_RELAYS = [
 ] as const;
 
 export const RELAY_MAX_WAIT_MS = 4500;
+/** How many times to retry a failed trending-relay connection. */
+export const TRENDING_FETCH_ATTEMPTS = 3;
 /** Initial notes shown; more reveal as the sentinel scrolls into view. */
 export const WINDOW_PAGE_SIZE = 5;
 export const AUTHOR_CHUNK_SIZE = 100;
+
+const EOSE_CLOSE_REASON = "closed automatically on eose";
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function toLocatedEvents(events: Event[]): LocatedEvent[] {
+  const ordered: LocatedEvent[] = [];
+  const seen = new Set<string>();
+  for (const event of events) {
+    if (seen.has(event.id)) continue;
+    seen.add(event.id);
+    ordered.push({ ...event, seenOn: [TRENDING_RELAY] });
+  }
+  return ordered;
+}
+
+/**
+ * querySync resolves with [] on connection failure, which the UI used to treat
+ * as an empty feed. Track the close reason so we can retry real failures.
+ */
+function queryTrendingOnce(): Promise<{
+  events: Event[];
+  closeReason: string;
+}> {
+  const pool = new SimplePool();
+  pool.maxWaitForConnection = RELAY_MAX_WAIT_MS;
+
+  return new Promise((resolve) => {
+    const events: Event[] = [];
+    pool.subscribeEose(
+      [TRENDING_RELAY],
+      { kinds: [1] },
+      {
+        maxWait: RELAY_MAX_WAIT_MS,
+        onevent(event) {
+          events.push(event);
+        },
+        onclose(reasons) {
+          const closeReason = reasons[0]?.reason ?? "unknown";
+          pool.destroy();
+          resolve({ events, closeReason });
+        },
+      }
+    );
+  });
+}
 
 export const formatCreateAtDate = (unixTimestamp: number) => {
   const date = new Date(unixTimestamp * 1000);
@@ -43,28 +93,34 @@ export function chunkArray<T>(array: T[], chunkSize: number): T[][] {
  * Fetch trending kind 1 notes, preserving relay arrival order (do not sort
  * by created_at — that is the trending ranking). Takes the full stream until
  * EOSE; the UI windows what it renders.
+ *
+ * Retries when the relay WebSocket fails to connect — SimplePool otherwise
+ * returns an empty array and the UI looks like an empty feed.
  */
 export async function fetchTrendingNotes(): Promise<LocatedEvent[]> {
-  const pool = new SimplePool();
+  let lastCloseReason = "unknown";
 
-  try {
-    const events = await pool.querySync(
-      [TRENDING_RELAY],
-      { kinds: [1] },
-      { maxWait: RELAY_MAX_WAIT_MS }
-    );
+  for (let attempt = 0; attempt < TRENDING_FETCH_ATTEMPTS; attempt++) {
+    const { events, closeReason } = await queryTrendingOnce();
+    lastCloseReason = closeReason;
 
-    const ordered: LocatedEvent[] = [];
-    const seen = new Set<string>();
-    for (const event of events) {
-      if (seen.has(event.id)) continue;
-      seen.add(event.id);
-      ordered.push({ ...event, seenOn: [TRENDING_RELAY] });
+    if (events.length > 0) {
+      return toLocatedEvents(events);
     }
-    return ordered;
-  } finally {
-    pool.destroy();
+
+    // Genuine empty reply from a healthy subscription.
+    if (closeReason === EOSE_CLOSE_REASON) {
+      return [];
+    }
+
+    if (attempt < TRENDING_FETCH_ATTEMPTS - 1) {
+      await sleep(250 * (attempt + 1));
+    }
   }
+
+  throw new Error(
+    `Could not connect to the trending relay (${lastCloseReason}). Try again.`
+  );
 }
 
 type Kind0Record = {
