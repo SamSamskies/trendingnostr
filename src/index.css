@@ -14,6 +14,7 @@
   --font-mono: "JetBrains Mono", ui-monospace, monospace;
   --radius: 14px;
   --note-body-collapsed-max: 440px;
+  --note-body-fade-height: 2.75rem;
   color-scheme: light;
 }
 
@@ -168,6 +169,10 @@ a:focus-visible {
   font-size: 1.02rem;
 }
 
+.note-body-clip {
+  position: relative;
+}
+
 .note-body-content {
   overflow: hidden;
 }
@@ -177,15 +182,29 @@ a:focus-visible {
   mask-image: linear-gradient(
     to bottom,
     #000 0%,
-    #000 calc(100% - 2.75rem),
+    #000 calc(100% - var(--note-body-fade-height)),
     transparent 100%
   );
 }
 
+/* Hit target over the fade; expands only. Keyboard users use .note-body-toggle. */
+.note-body-fade {
+  position: absolute;
+  inset-inline: 0;
+  bottom: 0;
+  height: var(--note-body-fade-height);
+  margin: 0;
+  padding: 0;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+}
+
 .note-body-toggle {
   display: block;
+  width: 100%;
   margin: 0.35rem 0 0;
-  padding: 0;
+  padding: 0.2rem 0;
   border: none;
   background: none;
   font: inherit;
@@ -194,6 +213,7 @@ a:focus-visible {
   font-size: 0.88rem;
   letter-spacing: -0.01em;
   color: var(--accent);
+  text-align: left;
   cursor: pointer;
 }
 

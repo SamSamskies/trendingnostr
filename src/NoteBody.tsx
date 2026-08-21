@@ -135,8 +135,24 @@ export function NoteBody({ children }: { children: ReactNode }) {
 
   return (
     <div className={`note-body${collapsed ? " note-body-collapsed" : ""}`}>
-      <div ref={contentRef} className="note-body-content">
-        {children}
+      <div className="note-body-clip">
+        <div ref={contentRef} className="note-body-content">
+          {children}
+        </div>
+        {collapsed ? (
+          <button
+            type="button"
+            className="note-body-fade"
+            aria-label="Show more"
+            tabIndex={-1}
+            onClick={() => {
+              setExpanded(true);
+              // This overlay unmounts on expand; move focus to the toggle so
+              // it does not fall back to document.body.
+              toggleRef.current?.focus();
+            }}
+          />
+        ) : null}
       </div>
       {overflows ? (
         <button
