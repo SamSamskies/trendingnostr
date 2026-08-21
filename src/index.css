@@ -1,0 +1,351 @@
+:root {
+  --ink: #1c1f18;
+  --muted: #6a7264;
+  --canvas: #e6e9e1;
+  --canvas-deep: #d5dacf;
+  --panel: #fbfcf8;
+  --line: rgba(28, 31, 24, 0.1);
+  --accent: #b45309;
+  --accent-soft: rgba(180, 83, 9, 0.1);
+  --danger: #9f1239;
+  --shadow: 0 12px 28px rgba(28, 31, 24, 0.07);
+  --font-display: "Sora", "Avenir Next", sans-serif;
+  --font-body: "Plus Jakarta Sans", "Segoe UI", sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, monospace;
+  --radius: 14px;
+  color-scheme: light;
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  min-height: 100%;
+}
+
+body {
+  min-height: 100vh;
+  font-family: var(--font-body);
+  color: var(--ink);
+  background-color: var(--canvas);
+  background-image:
+    radial-gradient(
+      100% 70% at 80% -10%,
+      rgba(180, 83, 9, 0.08),
+      transparent 50%
+    ),
+    linear-gradient(165deg, var(--canvas) 0%, var(--canvas-deep) 100%);
+  background-attachment: fixed;
+}
+
+button:focus-visible,
+a:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.page {
+  width: min(40rem, calc(100% - 2rem));
+  margin: 0 auto 4rem;
+  padding-top: 2rem;
+}
+
+.hero {
+  padding: 0 0 1.5rem;
+}
+
+.hero h1 {
+  margin: 0;
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: clamp(1.85rem, 5.5vw, 2.45rem);
+  letter-spacing: -0.04em;
+  line-height: 1.05;
+}
+
+.status {
+  margin: 0.5rem 0 0;
+  padding: 1rem 1.15rem;
+  color: var(--muted);
+  font-size: 0.95rem;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+}
+
+.status-error {
+  color: var(--danger);
+  border-color: rgba(159, 18, 57, 0.25);
+}
+
+.results {
+  list-style: none;
+  margin: 0.25rem 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.9rem;
+}
+
+.note {
+  position: relative;
+  padding: 1.15rem 2.6rem 1.15rem 1.25rem;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+}
+
+.note-author {
+  display: flex;
+  align-items: center;
+  gap: 0.7rem;
+  min-width: 0;
+  margin: 0 0 0.75rem;
+  color: inherit;
+  text-decoration: none;
+}
+
+.note-author-copy {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.12rem;
+}
+
+.note-author-name {
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: 0.95rem;
+  letter-spacing: -0.02em;
+  line-height: 1.25;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.note-author:hover .note-author-name {
+  color: var(--accent);
+}
+
+.note time {
+  display: block;
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  color: var(--muted);
+}
+
+.note-body {
+  overflow-wrap: anywhere;
+  line-height: 1.55;
+  font-size: 1.02rem;
+}
+
+.note-body a {
+  color: var(--accent);
+}
+
+.note-mention {
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.note-mention:hover {
+  text-decoration: underline;
+  text-underline-offset: 0.12em;
+}
+
+.note-emoji {
+  display: inline-block;
+  height: 1.35em;
+  width: auto;
+  max-width: 1.8em;
+  margin: 0 0.05em;
+  object-fit: contain;
+  vertical-align: -0.25em;
+}
+
+.note-image,
+.note-video,
+.note-embed {
+  display: block;
+  width: 100%;
+  max-width: 100%;
+  margin: 0.7rem 0 0.2rem;
+  border-radius: 10px;
+}
+
+.note-embed {
+  height: 380px;
+  border: 0;
+}
+
+.avatar {
+  flex: none;
+  width: 2.1rem;
+  height: 2.1rem;
+  border-radius: 50%;
+  object-fit: cover;
+  background: var(--canvas);
+}
+
+.avatar-empty {
+  display: block;
+  border: 1px solid var(--line);
+}
+
+.note-menu {
+  position: absolute;
+  top: 0.55rem;
+  right: 0.45rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.1rem;
+  height: 2.1rem;
+  margin: 0;
+  padding: 0;
+  border: none;
+  border-radius: 8px;
+  background: none;
+  color: var(--muted);
+  cursor: pointer;
+}
+
+.note-menu-icon {
+  display: block;
+  width: 1.1rem;
+  height: 1.1rem;
+}
+
+.note-menu:hover {
+  color: var(--ink);
+  background: var(--accent-soft);
+}
+
+.primary,
+.secondary {
+  font: inherit;
+  font-family: var(--font-display);
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  border-radius: 10px;
+  padding: 0.7rem 1.1rem;
+  cursor: pointer;
+  min-height: 2.6rem;
+  text-decoration: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.primary {
+  border: none;
+  background: var(--ink);
+  color: #f8faf5;
+}
+
+.primary:hover:not(:disabled) {
+  background: var(--accent);
+}
+
+.secondary {
+  background: transparent;
+  color: var(--ink);
+  border: 1px solid var(--line);
+}
+
+.secondary:hover:not(:disabled) {
+  background: rgba(28, 31, 24, 0.04);
+}
+
+.primary:disabled,
+.secondary:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.open-in-dialog {
+  width: min(22rem, calc(100vw - 2rem));
+  max-height: min(36rem, calc(100vh - 2rem));
+  overflow: auto;
+  margin: auto;
+  padding: 1.3rem 1.15rem 1.1rem;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  background: var(--panel);
+  box-shadow: var(--shadow);
+  color: var(--ink);
+}
+
+.open-in-dialog::backdrop {
+  background: rgba(28, 31, 24, 0.4);
+}
+
+.open-in-title {
+  margin: 0 0 1rem;
+  text-align: center;
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 1.35rem;
+  letter-spacing: -0.03em;
+}
+
+.open-in-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+a.open-in-link {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  text-decoration: none;
+  box-sizing: border-box;
+}
+
+.open-in-cancel {
+  display: block;
+  width: 100%;
+  margin: 0.85rem 0 0;
+  padding: 0.45rem;
+  border: none;
+  background: none;
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted);
+  cursor: pointer;
+}
+
+.open-in-cancel:hover {
+  color: var(--ink);
+}
+
+.open-in-cancel:focus-visible,
+a.open-in-link:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.sentinel {
+  height: 1px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation: none !important;
+    transition: none !important;
+  }
+}
