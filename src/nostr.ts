@@ -10,6 +10,8 @@ export const WINE_TRENDING_API = "https://api.nostr.wine/trending";
 export const WINE_TRENDING_LIMIT = 200;
 /** Max window allowed by wine; default is 4h and misses most relay-ranked notes. */
 export const WINE_TRENDING_HOURS = 48;
+/** nostr.wine trending API allows 1 request per second. */
+export const WINE_MIN_REQUEST_INTERVAL_MS = 1000;
 
 /**
  * Relays used to hydrate kind 1 events by id after a wine API lookup.
@@ -240,6 +242,7 @@ export type TrendingFeed = {
  */
 export async function fetchTrendingFeed(): Promise<TrendingFeed> {
   // Soft-fail: notes still render if wine is down or rate-limited.
+  const wineStartedAt = Date.now();
   const winePromise = fetchWineTrending().then(
     (payload) => payload,
     () => null
@@ -293,8 +296,16 @@ export async function fetchTrendingFeed(): Promise<TrendingFeed> {
 
   try {
     let wine = await winePromise;
-    // Parallel request may have failed; retry once for the fallback path.
-    if (!wine) wine = await fetchWineTrending();
+    // Parallel request may have failed; wait out the 1 req/sec window, then
+    // retry once so the fallback feed is not lost to a back-to-back reject.
+    if (!wine) {
+      const waitMs = Math.max(
+        0,
+        WINE_MIN_REQUEST_INTERVAL_MS - (Date.now() - wineStartedAt)
+      );
+      if (waitMs > 0) await sleep(waitMs);
+      wine = await fetchWineTrending();
+    }
 
     // Successful fallback (including empty) is the feed state — don't mask as relay error.
     return {
