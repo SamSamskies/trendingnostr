@@ -108,6 +108,7 @@ export default function App() {
   const [profiles, setProfiles] = useState<Record<string, Kind0Profile>>({});
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [reloadToken, setReloadToken] = useState(0);
   const [openTarget, setOpenTarget] = useState<OpenInTarget | null>(null);
   const sentinelRef = useRef<HTMLDivElement>(null);
 
@@ -126,7 +127,7 @@ export default function App() {
         setEvents(notes);
         setCurrentDataLength(Math.min(WINDOW_PAGE_SIZE, notes.length));
         if (notes.length === 0) {
-          setError("No trending notes right now. Try refreshing the page.");
+          setError("No trending notes right now. Try again in a moment.");
         }
       } catch (err) {
         if (cancelled) return;
@@ -146,7 +147,7 @@ export default function App() {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [reloadToken]);
 
   useEffect(() => {
     const sentinel = sentinelRef.current;
@@ -233,9 +234,16 @@ export default function App() {
       ) : null}
 
       {!loading && error ? (
-        <p className="status status-error" role="status">
-          {error}
-        </p>
+        <div className="status status-error" role="status">
+          <p>{error}</p>
+          <button
+            type="button"
+            className="status-retry"
+            onClick={() => setReloadToken((token) => token + 1)}
+          >
+            Try again
+          </button>
+        </div>
       ) : null}
 
       {!loading && visibleEvents.length > 0 ? (
