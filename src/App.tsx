@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { NoteBody } from "./NoteBody";
 import { NoteContent } from "./NoteContent";
 import { Avatar } from "./Avatar";
 import {
@@ -234,14 +235,14 @@ export default function App() {
                     setOpenTarget({ kind: "profile", code })
                   }
                 />
-                <div className="note-body">
+                <NoteBody>
                   <NoteContent
                     content={note.content}
                     tags={note.tags}
                     profiles={profiles}
                     onOpen={(kind, code) => setOpenTarget({ kind, code })}
                   />
-                </div>
+                </NoteBody>
               </li>
             ))}
           </ol>
