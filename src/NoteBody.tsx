@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useLayoutEffect, useRef, useState, type ReactNode } from "react";
 
 /** Must match `--note-body-collapsed-max` in index.css. */
 const COLLAPSED_MAX_HEIGHT_PX = 440;
@@ -8,7 +8,8 @@ export function NoteBody({ children }: { children: ReactNode }) {
   const [expanded, setExpanded] = useState(false);
   const [overflows, setOverflows] = useState(false);
 
-  useEffect(() => {
+  // Measure before paint so long notes never flash at full height then snap closed.
+  useLayoutEffect(() => {
     const el = contentRef.current;
     if (!el) return;
 
