@@ -5,6 +5,20 @@ export type LocatedEvent = Event & { seenOn: string[] };
 
 export const TRENDING_RELAY = "wss://trending.relays.land";
 
+/** Public HTTP ranking API (same source the trending relay mirrors). */
+export const WINE_TRENDING_API = "https://api.nostr.wine/trending";
+export const WINE_TRENDING_LIMIT = 100;
+
+/**
+ * Relays used to hydrate kind 1 events by id after a wine API lookup.
+ * Note: `wss://nostr.wine` is payment-gated and rejects anonymous sockets (403).
+ */
+export const EVENT_HYDRATION_RELAYS = [
+  "wss://relay.damus.io",
+  "wss://relay.primal.net",
+  "wss://relay.ditto.pub",
+] as const;
+
 export const PROFILE_RELAYS = [
   "wss://relay.vertexlab.io",
   "wss://purplepag.es",
@@ -23,26 +37,56 @@ const PROFILE_CACHE_MAX_ENTRIES = 500;
 
 const EOSE_CLOSE_REASON = "closed automatically on eose";
 
+export type TrendingRelayErrorCode = "rate_limited" | "connection_failed";
+
+export class TrendingRelayError extends Error {
+  readonly code: TrendingRelayErrorCode;
+
+  constructor(code: TrendingRelayErrorCode, message: string) {
+    super(message);
+    this.name = "TrendingRelayError";
+    this.code = code;
+  }
+}
+
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-function toLocatedEvents(events: Event[]): LocatedEvent[] {
+function isRateLimitedCloseReason(reason: string): boolean {
+  return /rate[-_ ]?limited/i.test(reason);
+}
+
+function toLocatedEvents(
+  events: Event[],
+  seenOn: readonly string[]
+): LocatedEvent[] {
   const ordered: LocatedEvent[] = [];
   const seen = new Set<string>();
   for (const event of events) {
     if (seen.has(event.id)) continue;
     seen.add(event.id);
-    ordered.push({ ...event, seenOn: [TRENDING_RELAY] });
+    ordered.push({ ...event, seenOn: [...seenOn] });
   }
   return ordered;
+}
+
+type WineTrendingItem = {
+  event_id?: unknown;
+};
+
+function isEventId(value: unknown): value is string {
+  return typeof value === "string" && /^[0-9a-f]{64}$/i.test(value);
 }
 
 /**
  * querySync resolves with [] on connection failure, which the UI used to treat
  * as an empty feed. Track the close reason so we can retry real failures.
  */
-function queryTrendingOnce(): Promise<{
+function queryRelayOnce(
+  relays: readonly string[],
+  filter: { kinds?: number[]; ids?: string[] }
+): Promise<{
   events: Event[];
   closeReason: string;
 }> {
@@ -51,22 +95,72 @@ function queryTrendingOnce(): Promise<{
 
   return new Promise((resolve) => {
     const events: Event[] = [];
-    pool.subscribeEose(
-      [TRENDING_RELAY],
-      { kinds: [1] },
-      {
-        maxWait: RELAY_MAX_WAIT_MS,
-        onevent(event) {
-          events.push(event);
-        },
-        onclose(reasons) {
-          const closeReason = reasons[0]?.reason ?? "unknown";
-          pool.destroy();
-          resolve({ events, closeReason });
-        },
-      }
-    );
+    pool.subscribeEose([...relays], filter, {
+      maxWait: RELAY_MAX_WAIT_MS,
+      onevent(event) {
+        events.push(event);
+      },
+      onclose(reasons) {
+        const closeReason = reasons[0]?.reason ?? "unknown";
+        pool.destroy();
+        resolve({ events, closeReason });
+      },
+    });
   });
+}
+
+async function fetchWineTrendingIds(): Promise<string[]> {
+  const url = new URL(WINE_TRENDING_API);
+  url.searchParams.set("limit", String(WINE_TRENDING_LIMIT));
+
+  const response = await fetch(url);
+  if (!response.ok) {
+    throw new Error(`nostr.wine trending API HTTP ${response.status}`);
+  }
+
+  const data: unknown = await response.json();
+  if (!Array.isArray(data)) {
+    throw new Error("nostr.wine trending API returned a non-array body.");
+  }
+
+  const ids: string[] = [];
+  const seen = new Set<string>();
+  for (const item of data as WineTrendingItem[]) {
+    const id = item?.event_id;
+    if (!isEventId(id)) continue;
+    const normalized = id.toLowerCase();
+    if (seen.has(normalized)) continue;
+    seen.add(normalized);
+    ids.push(normalized);
+  }
+  return ids;
+}
+
+/**
+ * Ranking from wine HTTP API, full notes from public relays (wine order preserved).
+ */
+async function fetchTrendingNotesFromWineFallback(): Promise<LocatedEvent[]> {
+  const ids = await fetchWineTrendingIds();
+  if (ids.length === 0) return [];
+
+  const { events, closeReason } = await queryRelayOnce(EVENT_HYDRATION_RELAYS, {
+    ids,
+    kinds: [1],
+  });
+
+  if (events.length === 0) {
+    throw new Error(
+      `Could not hydrate trending notes from backup relays (${closeReason}).`
+    );
+  }
+
+  const byId = new Map(events.map((event) => [event.id.toLowerCase(), event]));
+  const ordered: Event[] = [];
+  for (const id of ids) {
+    const event = byId.get(id);
+    if (event) ordered.push(event);
+  }
+  return toLocatedEvents(ordered, EVENT_HYDRATION_RELAYS);
 }
 
 export const formatCreateAtDate = (unixTimestamp: number) => {
@@ -98,18 +192,22 @@ export function chunkArray<T>(array: T[], chunkSize: number): T[][] {
  * by created_at — that is the trending ranking). Takes the full stream until
  * EOSE; the UI windows what it renders.
  *
- * Retries when the relay WebSocket fails to connect — SimplePool otherwise
- * returns an empty array and the UI looks like an empty feed.
+ * Retries transient connect failures. On rate-limit (or exhausted connect
+ * failures), falls back to nostr.wine's HTTP trending API + public-relay
+ * hydration. Does not retry rate-limit closes against the trending relay.
  */
 export async function fetchTrendingNotes(): Promise<LocatedEvent[]> {
   let lastCloseReason = "unknown";
+  let relayError: TrendingRelayError | null = null;
 
   for (let attempt = 0; attempt < TRENDING_FETCH_ATTEMPTS; attempt++) {
-    const { events, closeReason } = await queryTrendingOnce();
+    const { events, closeReason } = await queryRelayOnce([TRENDING_RELAY], {
+      kinds: [1],
+    });
     lastCloseReason = closeReason;
 
     if (events.length > 0) {
-      return toLocatedEvents(events);
+      return toLocatedEvents(events, [TRENDING_RELAY]);
     }
 
     // Genuine empty reply from a healthy subscription.
@@ -117,13 +215,36 @@ export async function fetchTrendingNotes(): Promise<LocatedEvent[]> {
       return [];
     }
 
+    if (isRateLimitedCloseReason(closeReason)) {
+      relayError = new TrendingRelayError(
+        "rate_limited",
+        "The trending relay is rate-limiting this connection."
+      );
+      break;
+    }
+
     if (attempt < TRENDING_FETCH_ATTEMPTS - 1) {
       await sleep(250 * (attempt + 1));
     }
   }
 
-  throw new Error(
-    `Could not connect to the trending relay (${lastCloseReason}). Try again.`
+  if (!relayError) {
+    relayError = new TrendingRelayError(
+      "connection_failed",
+      `Could not connect to the trending relay (${lastCloseReason}).`
+    );
+  }
+
+  try {
+    // Successful fallback (including empty) is the feed state — don't mask as relay error.
+    return await fetchTrendingNotesFromWineFallback();
+  } catch {
+    // Prefer the original relay error if hydration also fails.
+  }
+
+  throw new TrendingRelayError(
+    relayError.code,
+    `${relayError.message} Try again.`
   );
 }
 
