@@ -7,7 +7,9 @@ export const TRENDING_RELAY = "wss://trending.relays.land";
 
 /** Public HTTP ranking API (same source the trending relay mirrors). */
 export const WINE_TRENDING_API = "https://api.nostr.wine/trending";
-export const WINE_TRENDING_LIMIT = 100;
+export const WINE_TRENDING_LIMIT = 200;
+/** Max window allowed by wine; default is 4h and misses most relay-ranked notes. */
+export const WINE_TRENDING_HOURS = 48;
 
 /**
  * Relays used to hydrate kind 1 events by id after a wine API lookup.
@@ -71,12 +73,34 @@ function toLocatedEvents(
   return ordered;
 }
 
+export type NoteEngagement = {
+  reactions: number;
+  replies: number;
+  reposts: number;
+  zapAmount: number;
+};
+
 type WineTrendingItem = {
   event_id?: unknown;
+  reactions?: unknown;
+  replies?: unknown;
+  reposts?: unknown;
+  zap_amount?: unknown;
+};
+
+type WineTrendingPayload = {
+  ids: string[];
+  engagementById: Record<string, NoteEngagement>;
 };
 
 function isEventId(value: unknown): value is string {
   return typeof value === "string" && /^[0-9a-f]{64}$/i.test(value);
+}
+
+function asNonNegInt(value: unknown): number {
+  return typeof value === "number" && Number.isFinite(value) && value >= 0
+    ? Math.floor(value)
+    : 0;
 }
 
 /**
@@ -109,9 +133,10 @@ function queryRelayOnce(
   });
 }
 
-async function fetchWineTrendingIds(): Promise<string[]> {
+async function fetchWineTrending(): Promise<WineTrendingPayload> {
   const url = new URL(WINE_TRENDING_API);
   url.searchParams.set("limit", String(WINE_TRENDING_LIMIT));
+  url.searchParams.set("hours", String(WINE_TRENDING_HOURS));
 
   const response = await fetch(url);
   if (!response.ok) {
@@ -124,6 +149,7 @@ async function fetchWineTrendingIds(): Promise<string[]> {
   }
 
   const ids: string[] = [];
+  const engagementById: Record<string, NoteEngagement> = {};
   const seen = new Set<string>();
   for (const item of data as WineTrendingItem[]) {
     const id = item?.event_id;
@@ -132,15 +158,23 @@ async function fetchWineTrendingIds(): Promise<string[]> {
     if (seen.has(normalized)) continue;
     seen.add(normalized);
     ids.push(normalized);
+    engagementById[normalized] = {
+      reactions: asNonNegInt(item.reactions),
+      replies: asNonNegInt(item.replies),
+      reposts: asNonNegInt(item.reposts),
+      zapAmount: asNonNegInt(item.zap_amount),
+    };
   }
-  return ids;
+  return { ids, engagementById };
 }
 
 /**
  * Ranking from wine HTTP API, full notes from public relays (wine order preserved).
  */
-async function fetchTrendingNotesFromWineFallback(): Promise<LocatedEvent[]> {
-  const ids = await fetchWineTrendingIds();
+async function hydrateTrendingNotesFromWine(
+  wine: WineTrendingPayload
+): Promise<LocatedEvent[]> {
+  const { ids } = wine;
   if (ids.length === 0) return [];
 
   const { events, closeReason } = await queryRelayOnce(EVENT_HYDRATION_RELAYS, {
@@ -187,16 +221,30 @@ export function chunkArray<T>(array: T[], chunkSize: number): T[][] {
   return chunkedArray;
 }
 
+export type TrendingFeed = {
+  notes: LocatedEvent[];
+  /** Join key is lowercase event id. Empty when wine metadata is unavailable. */
+  engagementById: Record<string, NoteEngagement>;
+};
+
 /**
  * Fetch trending kind 1 notes, preserving relay arrival order (do not sort
  * by created_at — that is the trending ranking). Takes the full stream until
  * EOSE; the UI windows what it renders.
  *
- * Retries transient connect failures. On rate-limit (or exhausted connect
- * failures), falls back to nostr.wine's HTTP trending API + public-relay
- * hydration. Does not retry rate-limit closes against the trending relay.
+ * Loads nostr.wine engagement metadata in parallel (labels only — does not
+ * re-sort). Retries transient connect failures. On rate-limit (or exhausted
+ * connect failures), falls back to wine HTTP ranking + public-relay hydration,
+ * reusing the in-flight wine request. Does not retry rate-limit closes against
+ * the trending relay.
  */
-export async function fetchTrendingNotes(): Promise<LocatedEvent[]> {
+export async function fetchTrendingFeed(): Promise<TrendingFeed> {
+  // Soft-fail: notes still render if wine is down or rate-limited.
+  const winePromise = fetchWineTrending().then(
+    (payload) => payload,
+    () => null
+  );
+
   let lastCloseReason = "unknown";
   let relayError: TrendingRelayError | null = null;
 
@@ -207,12 +255,20 @@ export async function fetchTrendingNotes(): Promise<LocatedEvent[]> {
     lastCloseReason = closeReason;
 
     if (events.length > 0) {
-      return toLocatedEvents(events, [TRENDING_RELAY]);
+      const wine = await winePromise;
+      return {
+        notes: toLocatedEvents(events, [TRENDING_RELAY]),
+        engagementById: wine?.engagementById ?? {},
+      };
     }
 
     // Genuine empty reply from a healthy subscription.
     if (closeReason === EOSE_CLOSE_REASON) {
-      return [];
+      const wine = await winePromise;
+      return {
+        notes: [],
+        engagementById: wine?.engagementById ?? {},
+      };
     }
 
     if (isRateLimitedCloseReason(closeReason)) {
@@ -236,8 +292,15 @@ export async function fetchTrendingNotes(): Promise<LocatedEvent[]> {
   }
 
   try {
+    let wine = await winePromise;
+    // Parallel request may have failed; retry once for the fallback path.
+    if (!wine) wine = await fetchWineTrending();
+
     // Successful fallback (including empty) is the feed state — don't mask as relay error.
-    return await fetchTrendingNotesFromWineFallback();
+    return {
+      notes: await hydrateTrendingNotesFromWine(wine),
+      engagementById: wine.engagementById,
+    };
   } catch {
     // Prefer the original relay error if hydration also fails.
   }
