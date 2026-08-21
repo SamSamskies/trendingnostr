@@ -20,6 +20,7 @@ import {
   fetchTrendingNotes,
   formatCreateAtDate,
   getKind0Profiles,
+  readCachedKind0Profiles,
   WINDOW_PAGE_SIZE,
   type LocatedEvent,
 } from "./nostr";
@@ -179,19 +180,31 @@ export default function App() {
       }))
     );
 
+    const pubkeys = identities.map((id) => id.pubkey);
+    const mergeProfiles = (
+      prev: Record<string, Kind0Profile>,
+      found: Record<string, Kind0Profile>
+    ) => {
+      let changed = false;
+      const next = { ...prev };
+      for (const [pubkey, profile] of Object.entries(found)) {
+        if (prev[pubkey] === profile) continue;
+        next[pubkey] = profile;
+        changed = true;
+      }
+      return changed ? next : prev;
+    };
+
+    // Paint cached names/avatars immediately; refresh from relays in the background.
+    const cached = readCachedKind0Profiles(pubkeys);
+    if (Object.keys(cached).length > 0) {
+      setProfiles((prev) => mergeProfiles(prev, cached));
+    }
+
     let cancelled = false;
-    void getKind0Profiles(identities.map((id) => id.pubkey)).then((found) => {
+    void getKind0Profiles(pubkeys).then((found) => {
       if (cancelled) return;
-      setProfiles((prev) => {
-        let changed = false;
-        const next = { ...prev };
-        for (const [pubkey, profile] of Object.entries(found)) {
-          if (prev[pubkey] === profile) continue;
-          next[pubkey] = profile;
-          changed = true;
-        }
-        return changed ? next : prev;
-      });
+      setProfiles((prev) => mergeProfiles(prev, found));
     });
 
     return () => {
