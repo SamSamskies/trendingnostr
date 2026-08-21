@@ -320,6 +320,51 @@ a:focus-visible {
   color: var(--accent);
 }
 
+.note-stats {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.85rem 1.15rem;
+  width: 100%;
+  margin: 0.85rem 0 0;
+  padding: 0.75rem 0 0;
+  border: none;
+  border-top: 1px solid var(--line);
+  border-radius: 0;
+  background: none;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  color: var(--muted);
+  transition: color 0.15s ease;
+}
+
+.note-stats:hover,
+.note-stats:focus-visible {
+  color: var(--ink);
+}
+
+.note-stat {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  min-width: 0;
+  font-family: var(--font-mono);
+  font-size: 0.78rem;
+  line-height: 1;
+}
+
+.note-stat-icon {
+  flex: none;
+  width: 1rem;
+  height: 1rem;
+}
+
+.note-stat-value {
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
 .note-mention {
   font-weight: 600;
   text-decoration: none;

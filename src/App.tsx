@@ -17,15 +17,155 @@ import {
 import { encodeNpub, type Kind0Profile } from "./identity";
 import { encodeNevent } from "./nostr-clients";
 import {
-  fetchTrendingNotes,
+  fetchTrendingFeed,
   formatCreateAtDate,
   getKind0Profiles,
   readCachedKind0Profiles,
   WINDOW_PAGE_SIZE,
   type LocatedEvent,
+  type NoteEngagement,
 } from "./nostr";
 
 const SKELETON_LINE_COUNTS = [3, 2, 4, 2, 3] as const;
+
+/** Compact counts for engagement labels (e.g. 1.2k, 3.4M). */
+function formatEngagementCount(value: number): string {
+  if (value < 1000) return String(value);
+  if (value < 1_000_000) {
+    const thousands = value / 1000;
+    const rounded =
+      thousands >= 10 ? Math.round(thousands) : Math.round(thousands * 10) / 10;
+    return `${rounded}k`;
+  }
+  const millions = value / 1_000_000;
+  const rounded =
+    millions >= 10 ? Math.round(millions) : Math.round(millions * 10) / 10;
+  return `${rounded}M`;
+}
+
+function ReplyIcon() {
+  return (
+    <svg className="note-stat-icon" viewBox="0 0 24 24" aria-hidden="true">
+      <path
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.75"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        d="M7.5 18.5 4 21.5V7.5A2.5 2.5 0 0 1 6.5 5h11A2.5 2.5 0 0 1 20 7.5v7a2.5 2.5 0 0 1-2.5 2.5H7.5Z"
+      />
+    </svg>
+  );
+}
+
+function ZapIcon() {
+  return (
+    <svg className="note-stat-icon" viewBox="0 0 24 24" aria-hidden="true">
+      <path
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.75"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        d="M13 3 5.5 13.5H12l-1 7.5L18.5 10.5H12L13 3Z"
+      />
+    </svg>
+  );
+}
+
+function ReactionIcon() {
+  return (
+    <svg className="note-stat-icon" viewBox="0 0 24 24" aria-hidden="true">
+      <path
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.75"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        d="M12 20.3S4.5 15.4 4.5 9.9A4.4 4.4 0 0 1 12 7.2a4.4 4.4 0 0 1 7.5 2.7c0 5.5-7.5 10.4-7.5 10.4Z"
+      />
+    </svg>
+  );
+}
+
+function RepostIcon() {
+  return (
+    <svg className="note-stat-icon" viewBox="0 0 24 24" aria-hidden="true">
+      <path
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.75"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        d="M7 7h9.5A2.5 2.5 0 0 1 19 9.5V13M17 5l2 2-2 2M17 17H7.5A2.5 2.5 0 0 1 5 14.5V11M7 19l-2-2 2-2"
+      />
+    </svg>
+  );
+}
+
+function NoteEngagementStats({
+  stats,
+  onOpen,
+}: {
+  stats: NoteEngagement;
+  onOpen: () => void;
+}) {
+  // Order matches common Nostr clients (e.g. Primal): reply, zap, reaction, repost.
+  const items = [
+    {
+      key: "replies",
+      value: stats.replies,
+      label: "replies",
+      icon: <ReplyIcon />,
+    },
+    {
+      key: "zaps",
+      value: stats.zapAmount,
+      label: "sats",
+      icon: <ZapIcon />,
+    },
+    {
+      key: "reactions",
+      value: stats.reactions,
+      label: "reactions",
+      icon: <ReactionIcon />,
+    },
+    {
+      key: "reposts",
+      value: stats.reposts,
+      label: "reposts",
+      icon: <RepostIcon />,
+    },
+  ];
+
+  const summary = items
+    .map((item) => `${item.value.toLocaleString()} ${item.label}`)
+    .join(", ");
+
+  return (
+    <button
+      type="button"
+      className="note-stats"
+      aria-haspopup="dialog"
+      aria-label={`Open this note in… Engagement: ${summary}`}
+      title="Open this note in…"
+      onClick={onOpen}
+    >
+      {items.map((item) => (
+        <span
+          key={item.key}
+          className="note-stat"
+          title={`${item.value.toLocaleString()} ${item.label}`}
+        >
+          {item.icon}
+          <span className="note-stat-value" aria-hidden="true">
+            {formatEngagementCount(item.value)}
+          </span>
+        </span>
+      ))}
+    </button>
+  );
+}
 
 function NoteSkeleton({ lines }: { lines: number }) {
   return (
@@ -105,6 +245,9 @@ function NoteAuthor({
 
 export default function App() {
   const [events, setEvents] = useState<LocatedEvent[]>([]);
+  const [engagementById, setEngagementById] = useState<
+    Record<string, NoteEngagement>
+  >({});
   const [currentDataLength, setCurrentDataLength] = useState(0);
   const [profiles, setProfiles] = useState<Record<string, Kind0Profile>>({});
   const [loading, setLoading] = useState(true);
@@ -121,18 +264,21 @@ export default function App() {
       setError(null);
       setCurrentDataLength(0);
       setEvents([]);
+      setEngagementById({});
 
       try {
-        const notes = await fetchTrendingNotes();
+        const feed = await fetchTrendingFeed();
         if (cancelled) return;
-        setEvents(notes);
-        setCurrentDataLength(Math.min(WINDOW_PAGE_SIZE, notes.length));
-        if (notes.length === 0) {
+        setEvents(feed.notes);
+        setEngagementById(feed.engagementById);
+        setCurrentDataLength(Math.min(WINDOW_PAGE_SIZE, feed.notes.length));
+        if (feed.notes.length === 0) {
           setError("No trending notes right now. Try again in a moment.");
         }
       } catch (err) {
         if (cancelled) return;
         setEvents([]);
+        setEngagementById({});
         setCurrentDataLength(0);
         setError(
           err instanceof Error
@@ -262,45 +408,52 @@ export default function App() {
       {!loading && visibleEvents.length > 0 ? (
         <>
           <ol className="results">
-            {visibleEvents.map((note) => (
-              <li key={note.id} className="note">
-                <button
-                  type="button"
-                  className="note-menu"
-                  aria-haspopup="dialog"
-                  aria-label="Open this note in…"
-                  title="Open this note in…"
-                  onClick={() => {
-                    try {
-                      setOpenTarget({
-                        kind: "note",
-                        code: encodeNevent(note),
-                      });
-                    } catch {
-                      /* ignore encode errors */
+            {visibleEvents.map((note) => {
+              const engagement = engagementById[note.id.toLowerCase()];
+              const openNote = () => {
+                try {
+                  setOpenTarget({
+                    kind: "note",
+                    code: encodeNevent(note),
+                  });
+                } catch {
+                  /* ignore encode errors */
+                }
+              };
+              return (
+                <li key={note.id} className="note">
+                  <button
+                    type="button"
+                    className="note-menu"
+                    aria-haspopup="dialog"
+                    aria-label="Open this note in…"
+                    title="Open this note in…"
+                    onClick={openNote}
+                  >
+                    <NoteMenuIcon />
+                  </button>
+                  <NoteAuthor
+                    pubkey={note.pubkey}
+                    createdAt={note.created_at}
+                    profile={profiles[note.pubkey.toLowerCase()]}
+                    onOpenProfile={(code) =>
+                      setOpenTarget({ kind: "profile", code })
                     }
-                  }}
-                >
-                  <NoteMenuIcon />
-                </button>
-                <NoteAuthor
-                  pubkey={note.pubkey}
-                  createdAt={note.created_at}
-                  profile={profiles[note.pubkey.toLowerCase()]}
-                  onOpenProfile={(code) =>
-                    setOpenTarget({ kind: "profile", code })
-                  }
-                />
-                <NoteBody>
-                  <NoteContent
-                    content={note.content}
-                    tags={note.tags}
-                    profiles={profiles}
-                    onOpen={(kind, code) => setOpenTarget({ kind, code })}
                   />
-                </NoteBody>
-              </li>
-            ))}
+                  <NoteBody>
+                    <NoteContent
+                      content={note.content}
+                      tags={note.tags}
+                      profiles={profiles}
+                      onOpen={(kind, code) => setOpenTarget({ kind, code })}
+                    />
+                  </NoteBody>
+                  {engagement ? (
+                    <NoteEngagementStats stats={engagement} onOpen={openNote} />
+                  ) : null}
+                </li>
+              );
+            })}
           </ol>
           <div ref={sentinelRef} className="sentinel" aria-hidden="true" />
         </>
