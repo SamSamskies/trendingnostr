@@ -1,6 +1,6 @@
 # Trending Nostr
 
-A simple read-only feed of trending Nostr notes from [trending.relays.land](https://trending.relays.land/).
+A simple read-only feed of trending Nostr notes.
 
 ## Installation
 
