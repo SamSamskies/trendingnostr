@@ -38,6 +38,32 @@ function isClippedByOverflow(content: HTMLElement, target: HTMLElement): boolean
   return targetRect.bottom > contentRect.bottom + 1;
 }
 
+const FOCUSABLE_SELECTOR = [
+  "a[href]",
+  "button:not([disabled])",
+  "input:not([disabled])",
+  "select:not([disabled])",
+  "textarea:not([disabled])",
+  '[tabindex]:not([tabindex="-1"])',
+].join(",");
+
+function getFocusableElements(root: HTMLElement): HTMLElement[] {
+  return Array.from(root.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR)).filter(
+    (el) => el.tabIndex >= 0
+  );
+}
+
+/** Last tab stop in document order that precedes `content` (and is not inside it). */
+function focusPreviousOutside(content: HTMLElement): void {
+  const all = getFocusableElements(content.ownerDocument.body);
+  let previous: HTMLElement | undefined;
+  for (const el of all) {
+    if (el === content || content.contains(el)) break;
+    previous = el;
+  }
+  previous?.focus();
+}
+
 export function NoteBody({ children }: { children: ReactNode }) {
   const contentRef = useRef<HTMLDivElement>(null);
   const toggleRef = useRef<HTMLButtonElement>(null);
@@ -74,7 +100,8 @@ export function NoteBody({ children }: { children: ReactNode }) {
   const collapsed = overflows && !expanded;
 
   // Overflow:hidden hides clipped links visually but leaves them in the tab order.
-  // Send focus to "Show more" when Tab lands on content below the cutoff.
+  // Tab into clipped content → "Show more". Shift+Tab from "Show more" → skip
+  // clipped nodes so focus can reach the author link / note menu.
   useLayoutEffect(() => {
     if (!collapsed) return;
     const content = contentRef.current;
@@ -84,6 +111,20 @@ export function NoteBody({ children }: { children: ReactNode }) {
       const target = event.target;
       if (!(target instanceof HTMLElement) || !content.contains(target)) return;
       if (target === content || !isClippedByOverflow(content, target)) return;
+
+      // Came from the toggle via Shift+Tab — do not bounce focus back onto it.
+      if (event.relatedTarget === toggleRef.current) {
+        const unclipped = getFocusableElements(content).filter(
+          (el) => !isClippedByOverflow(content, el)
+        );
+        if (unclipped.length > 0) {
+          unclipped[unclipped.length - 1].focus();
+        } else {
+          focusPreviousOutside(content);
+        }
+        return;
+      }
+
       toggleRef.current?.focus();
     };
 
