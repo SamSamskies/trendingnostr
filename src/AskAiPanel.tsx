@@ -333,12 +333,6 @@ export function AskAiPanel({
 
       const live = getThread(noteId);
       const content = result.content;
-      live.history.push({ role: "assistant", content });
-      live.visible = live.visible.map((message) =>
-        message.id === assistantId && message.role === "assistant"
-          ? { ...message, content, pending: false }
-          : message
-      );
       if (!content) {
         live.visible = live.visible.filter((message) => message.id !== assistantId);
         live.visible.push({
@@ -346,6 +340,13 @@ export function AskAiPanel({
           role: "error",
           content: "The model returned an empty reply.",
         });
+      } else {
+        live.history.push({ role: "assistant", content });
+        live.visible = live.visible.map((message) =>
+          message.id === assistantId && message.role === "assistant"
+            ? { ...message, content, pending: false }
+            : message
+        );
       }
       persist(noteId, live);
     } catch (error) {
