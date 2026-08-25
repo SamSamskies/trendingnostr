@@ -518,7 +518,10 @@ export function AskAiPanel({
             <button
               type="button"
               className="ask-ai-secondary"
-              disabled={busy || (thread.visible.length === 0 && !draft)}
+              disabled={
+                busy ||
+                (thread.introStarted && thread.visible.length === 0 && !draft)
+              }
               onClick={handleClear}
             >
               Clear
