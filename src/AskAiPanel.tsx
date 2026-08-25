@@ -96,6 +96,9 @@ function formatEngagement(stats?: NoteEngagement): string {
   ].join(", ");
 }
 
+const NOTE_CONTEXT_INSTRUCTION =
+  "Explain this note and check whether its claims hold up. Search the web if that would help. Do not summarize the note.";
+
 function buildNoteContext(
   note: LocatedEvent,
   authorName: string,
@@ -124,6 +127,25 @@ function buildNoteContext(
     "Note:",
     truncated,
   ].join("\n");
+}
+
+function noteContextUserContent(
+  note: LocatedEvent,
+  authorName: string,
+  stats?: NoteEngagement
+): string {
+  return `${buildNoteContext(note, authorName, stats)}\n\n${NOTE_CONTEXT_INSTRUCTION}`;
+}
+
+function patchNoteContextHistory(
+  history: InferenceMessage[],
+  content: string
+): boolean {
+  const context = history[1];
+  if (history[0]?.role !== "system" || context?.role !== "user") return false;
+  if (context.content === content) return false;
+  history[1] = { role: "user", content };
+  return true;
 }
 
 function SparkleIcon() {
@@ -244,18 +266,16 @@ export function AskAiPanel({
     const controller = new AbortController();
     abortRef.current = controller;
     const noteId = note.id;
+    const contextContent = noteContextUserContent(note, authorName, engagement);
 
     const current = getThread(noteId);
     if (current.history.length === 0) {
       current.history = [
         { role: "system", content: systemPrompt() },
-        {
-          role: "user",
-          content:
-            buildNoteContext(note, authorName, engagement) +
-            "\n\nExplain this note and check whether its claims hold up. Search the web if that would help. Do not summarize the note.",
-        },
+        { role: "user", content: contextContent },
       ];
+    } else {
+      patchNoteContextHistory(current.history, contextContent);
     }
 
     if (userText) {
@@ -316,7 +336,7 @@ export function AskAiPanel({
 
     try {
       const result = await completeChat({
-        messages: current.history,
+        messages: current.history.map((message) => ({ ...message })),
         signal: controller.signal,
         onStatus(status) {
           patchAssistant({ status });
@@ -375,18 +395,44 @@ export function AskAiPanel({
     }
   }
 
+  const runTurnRef = useRef(runTurn);
+  runTurnRef.current = runTurn;
+
   useEffect(() => {
     const current = getThread(note.id);
     if (current.introStarted || current.visible.length > 0) return;
     current.introStarted = true;
     threads.set(note.id, current);
-    void runTurn(null);
+    void runTurnRef.current(null);
     return () => {
       abortRef.current?.abort();
     };
-    // Intro is per note; runTurn reads the latest note, author, and engagement.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [note.id]);
+
+  useEffect(() => {
+    const current = getThread(note.id);
+    const nextContent = noteContextUserContent(note, authorName, engagement);
+    if (!patchNoteContextHistory(current.history, nextContent)) return;
+
+    const restartingIntro = current.visible.some(
+      (message) =>
+        message.role === "assistant" && message.pending && !message.content
+    );
+    if (restartingIntro) {
+      current.visible = current.visible.filter(
+        (message) =>
+          !(
+            message.role === "assistant" &&
+            message.pending &&
+            !message.content
+          )
+      );
+    }
+    persist(note.id, current);
+    if (restartingIntro) {
+      void runTurnRef.current(null);
+    }
+  }, [note, authorName, engagement]);
 
   function handleSubmit(event: FormEvent) {
     event.preventDefault();
