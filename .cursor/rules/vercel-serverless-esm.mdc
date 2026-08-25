@@ -1,0 +1,31 @@
+---
+description: Vercel Node functions are ESM. Relative imports in api/ and lib/ must use .js extensions or production 500s.
+globs: api/**/*.{ts,js},lib/**/*.{ts,js}
+alwaysApply: true
+---
+
+# Vercel serverless ESM imports
+
+These are **Node.js serverless functions** (`api/*`, `nodejs24.x`), not Edge. `package.json` has `"type": "module"`. Prefer **JavaScript** handlers (`api/*.js`) for this Vite app: `vercel dev` crashes compiling `.ts` API routes (`Cannot read properties of undefined (reading 'startsWith')`).
+
+Relative imports in `api/` and `lib/` must include the `.js` extension. Vercel does **not** rewrite specifiers; Node ESM then fails with `ERR_MODULE_NOT_FOUND` / `FUNCTION_INVOCATION_FAILED`.
+
+## Required
+
+Relative imports in `api/` and `lib/` (and any `src/` file those functions import) must include the `.js` extension:
+
+```ts
+// ✅ GOOD
+import { applyCors } from "../lib/http.js";
+
+// ❌ BAD — works in `vercel dev`, 500s in production
+import { applyCors } from "../lib/http";
+```
+
+Vite client code in `src/` can keep extensionless imports. Do not "fix" those to `.js` unless that file is also imported by an `api/` handler.
+
+## Do not
+
+- Extract helpers out of a self-contained `api/*.ts` file without adding `.js` specifiers on every new relative import.
+- Assume inlining is required; the files **are** shipped. The missing `.js` is what breaks production.
+- Use Edge (`runtime: "edge"`) for these handlers.

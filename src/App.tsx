@@ -21,7 +21,6 @@ import {
   AskAiPanel,
   type AskAiPanelHandle,
 } from "./AskAiPanel";
-import { useInferenceAvailable } from "./inference";
 import {
   fetchTrendingFeed,
   formatCreateAtDate,
@@ -262,7 +261,6 @@ export default function App() {
   const [openTarget, setOpenTarget] = useState<OpenInTarget | null>(null);
   const [askNote, setAskNote] = useState<LocatedEvent | null>(null);
   const askAiRef = useRef<AskAiPanelHandle>(null);
-  const inferenceAvailable = useInferenceAvailable();
   const sentinelRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -461,28 +459,24 @@ export default function App() {
                       onOpen={(kind, code) => setOpenTarget({ kind, code })}
                     />
                   </NoteBody>
-                  {inferenceAvailable || engagement ? (
-                    <div className="note-footer">
-                      {engagement ? (
-                        <NoteEngagementStats
-                          stats={engagement}
-                          onOpen={openNote}
-                        />
-                      ) : null}
-                      {inferenceAvailable ? (
-                        <AskAiButton
-                          pressed={asking}
-                          onClick={() => {
-                            if (askNote?.id === note.id) {
-                              askAiRef.current?.close();
-                              return;
-                            }
-                            setAskNote(note);
-                          }}
-                        />
-                      ) : null}
-                    </div>
-                  ) : null}
+                  <div className="note-footer">
+                    {engagement ? (
+                      <NoteEngagementStats
+                        stats={engagement}
+                        onOpen={openNote}
+                      />
+                    ) : null}
+                    <AskAiButton
+                      pressed={asking}
+                      onClick={() => {
+                        if (askNote?.id === note.id) {
+                          askAiRef.current?.close();
+                          return;
+                        }
+                        setAskNote(note);
+                      }}
+                    />
+                  </div>
                 </li>
               );
             })}
