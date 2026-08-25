@@ -37,9 +37,10 @@ function apiKey() {
 function fallbackEnabled() {
   const flag = (
     process.env.INFERENCE_FALLBACK_ENABLED ??
-    process.env.GEMINI_FALLBACK_ENABLED
+    process.env.GEMINI_FALLBACK_ENABLED ??
+    ""
   )
-    ?.trim()
+    .trim()
     .toLowerCase();
   if (flag === "0" || flag === "false" || flag === "off") return false;
   return Boolean(apiKey());
