@@ -211,7 +211,7 @@ a:focus-visible {
 
 .note {
   position: relative;
-  padding: 1.15rem 2.6rem 1.15rem 1.25rem;
+  padding: 1.15rem 1.25rem;
   background: var(--panel);
   border: 1px solid var(--line);
   border-radius: var(--radius);
@@ -224,6 +224,7 @@ a:focus-visible {
   gap: 0.7rem;
   min-width: 0;
   margin: 0 0 0.75rem;
+  padding-right: 1.35rem;
   color: inherit;
   text-decoration: none;
 }
