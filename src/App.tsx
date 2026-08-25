@@ -16,6 +16,8 @@ import {
 } from "./mentions";
 import { encodeNpub, type Kind0Profile } from "./identity";
 import { encodeNevent } from "./nostr-clients";
+import { AskAiButton, AskAiPanel } from "./AskAiPanel";
+import { useInferenceAvailable } from "./inference";
 import {
   fetchTrendingFeed,
   formatCreateAtDate,
@@ -254,6 +256,8 @@ export default function App() {
   const [error, setError] = useState<string | null>(null);
   const [reloadToken, setReloadToken] = useState(0);
   const [openTarget, setOpenTarget] = useState<OpenInTarget | null>(null);
+  const [askNote, setAskNote] = useState<LocatedEvent | null>(null);
+  const inferenceAvailable = useInferenceAvailable();
   const sentinelRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -420,8 +424,12 @@ export default function App() {
                   /* ignore encode errors */
                 }
               };
+              const asking = askNote?.id === note.id;
               return (
-                <li key={note.id} className="note">
+                <li
+                  key={note.id}
+                  className={asking ? "note note-asking" : "note"}
+                >
                   <button
                     type="button"
                     className="note-menu"
@@ -448,8 +456,25 @@ export default function App() {
                       onOpen={(kind, code) => setOpenTarget({ kind, code })}
                     />
                   </NoteBody>
-                  {engagement ? (
-                    <NoteEngagementStats stats={engagement} onOpen={openNote} />
+                  {inferenceAvailable || engagement ? (
+                    <div className="note-footer">
+                      {engagement ? (
+                        <NoteEngagementStats
+                          stats={engagement}
+                          onOpen={openNote}
+                        />
+                      ) : null}
+                      {inferenceAvailable ? (
+                        <AskAiButton
+                          pressed={asking}
+                          onClick={() =>
+                            setAskNote((current) =>
+                              current?.id === note.id ? null : note
+                            )
+                          }
+                        />
+                      ) : null}
+                    </div>
                   ) : null}
                 </li>
               );
@@ -463,6 +488,15 @@ export default function App() {
         <OpenInDialog
           target={openTarget}
           onClose={() => setOpenTarget(null)}
+        />
+      ) : null}
+
+      {askNote ? (
+        <AskAiPanel
+          note={askNote}
+          profile={profiles[askNote.pubkey.toLowerCase()]}
+          engagement={engagementById[askNote.id.toLowerCase()]}
+          onClose={() => setAskNote(null)}
         />
       ) : null}
     </main>
