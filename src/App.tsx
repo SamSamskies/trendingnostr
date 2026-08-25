@@ -16,7 +16,11 @@ import {
 } from "./mentions";
 import { encodeNpub, type Kind0Profile } from "./identity";
 import { encodeNevent } from "./nostr-clients";
-import { AskAiButton, AskAiPanel } from "./AskAiPanel";
+import {
+  AskAiButton,
+  AskAiPanel,
+  type AskAiPanelHandle,
+} from "./AskAiPanel";
 import { useInferenceAvailable } from "./inference";
 import {
   fetchTrendingFeed,
@@ -257,6 +261,7 @@ export default function App() {
   const [reloadToken, setReloadToken] = useState(0);
   const [openTarget, setOpenTarget] = useState<OpenInTarget | null>(null);
   const [askNote, setAskNote] = useState<LocatedEvent | null>(null);
+  const askAiRef = useRef<AskAiPanelHandle>(null);
   const inferenceAvailable = useInferenceAvailable();
   const sentinelRef = useRef<HTMLDivElement>(null);
 
@@ -467,11 +472,13 @@ export default function App() {
                       {inferenceAvailable ? (
                         <AskAiButton
                           pressed={asking}
-                          onClick={() =>
-                            setAskNote((current) =>
-                              current?.id === note.id ? null : note
-                            )
-                          }
+                          onClick={() => {
+                            if (askNote?.id === note.id) {
+                              askAiRef.current?.close();
+                              return;
+                            }
+                            setAskNote(note);
+                          }}
                         />
                       ) : null}
                     </div>
@@ -493,6 +500,7 @@ export default function App() {
 
       {askNote ? (
         <AskAiPanel
+          ref={askAiRef}
           note={askNote}
           profile={profiles[askNote.pubkey.toLowerCase()]}
           engagement={engagementById[askNote.id.toLowerCase()]}
