@@ -288,6 +288,32 @@ export function AskAiPanel({
       persist(noteId, live);
     };
 
+    const settleAborted = () => {
+      const live = getThread(noteId);
+      const last = live.visible.find(
+        (message) => message.id === assistantId && message.role === "assistant"
+      );
+      if (last?.role === "assistant") {
+        if (!last.content) {
+          live.visible = live.visible.filter((message) => message.id !== assistantId);
+          if (!live.visible.some((message) => message.role === "assistant")) {
+            live.introStarted = false;
+            live.history = [];
+          }
+        } else {
+          live.visible = live.visible.map((message) =>
+            message.id === assistantId && message.role === "assistant"
+              ? { ...message, pending: false }
+              : message
+          );
+          if (live.history.at(-1)?.role !== "assistant") {
+            live.history.push({ role: "assistant", content: last.content });
+          }
+        }
+      }
+      persist(noteId, live);
+    };
+
     try {
       const result = await completeChat({
         messages: current.history,
@@ -300,7 +326,10 @@ export function AskAiPanel({
         },
       });
 
-      if (controller.signal.aborted) return;
+      if (controller.signal.aborted) {
+        settleAborted();
+        return;
+      }
 
       const live = getThread(noteId);
       const content = result.content;
@@ -320,32 +349,12 @@ export function AskAiPanel({
       }
       persist(noteId, live);
     } catch (error) {
-      const live = getThread(noteId);
       if (controller.signal.aborted || isAbortError(error)) {
-        const last = live.visible.find(
-          (message) => message.id === assistantId && message.role === "assistant"
-        );
-        if (last?.role === "assistant") {
-          if (!last.content) {
-            live.visible = live.visible.filter((message) => message.id !== assistantId);
-            if (!live.visible.some((message) => message.role === "assistant")) {
-              live.introStarted = false;
-              live.history = [];
-            }
-          } else {
-            live.visible = live.visible.map((message) =>
-              message.id === assistantId && message.role === "assistant"
-                ? { ...message, pending: false }
-                : message
-            );
-            if (live.history.at(-1)?.role !== "assistant") {
-              live.history.push({ role: "assistant", content: last.content });
-            }
-          }
-        }
-        persist(noteId, live);
+        settleAborted();
         return;
       }
+
+      const live = getThread(noteId);
 
       if (userText && live.history.at(-1)?.role === "user") {
         live.history.pop();
