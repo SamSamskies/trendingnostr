@@ -392,7 +392,10 @@ export function AskAiPanel({
       if (userText && live.history.at(-1)?.role === "user") {
         live.history.pop();
       }
-      live.visible = live.visible.filter((message) => message.id !== assistantId);
+      live.visible = live.visible.filter(
+        (message) =>
+          message.id !== assistantId && message.id !== userVisibleId
+      );
       live.visible.push({
         id: nextId(),
         role: "error",
@@ -400,6 +403,9 @@ export function AskAiPanel({
       });
       if (!live.visible.some((message) => message.role === "assistant")) {
         live.introStarted = false;
+      }
+      if (noteIdRef.current === noteId && userText) {
+        setDraft(userText);
       }
       persist(noteId, live);
     } finally {
