@@ -43,6 +43,7 @@ type Thread = {
 };
 
 const threads = new Map<string, Thread>();
+const inflight = new Map<string, AbortController>();
 
 let messageSeq = 0;
 function nextId(): string {
@@ -68,6 +69,67 @@ function snapshot(thread: Thread): Thread {
     visible: [...thread.visible],
     introStarted: thread.introStarted,
   };
+}
+
+function isTurnLive(noteId: string): boolean {
+  const controller = inflight.get(noteId);
+  return controller != null && !controller.signal.aborted;
+}
+
+function abortTurn(noteId: string): void {
+  const controller = inflight.get(noteId);
+  if (!controller) return;
+  inflight.delete(noteId);
+  controller.abort();
+}
+
+function findPendingAssistant(
+  visible: VisibleMessage[]
+): { message: Extract<VisibleMessage, { role: "assistant" }>; index: number } | undefined {
+  for (let i = visible.length - 1; i >= 0; i--) {
+    const message = visible[i];
+    if (message.role === "assistant" && message.pending) {
+      return { message, index: i };
+    }
+  }
+  return undefined;
+}
+
+function settlePendingThread(noteId: string): string | undefined {
+  const live = getThread(noteId);
+  const pending = findPendingAssistant(live.visible);
+  if (!pending) return undefined;
+
+  const { message, index } = pending;
+  const prev = live.visible[index - 1];
+  const userVisibleId = prev?.role === "user" ? prev.id : undefined;
+  const userText = prev?.role === "user" ? prev.content : undefined;
+
+  if (!message.content) {
+    live.visible = live.visible.filter(
+      (item) => item.id !== message.id && item.id !== userVisibleId
+    );
+    if (userText && live.history.at(-1)?.role === "user") {
+      live.history.pop();
+    }
+    if (!live.visible.some((item) => item.role === "assistant")) {
+      live.introStarted = false;
+      live.history = [];
+    }
+    threads.set(noteId, live);
+    return userText;
+  }
+
+  live.visible = live.visible.map((item) =>
+    item.id === message.id && item.role === "assistant"
+      ? { ...item, pending: false }
+      : item
+  );
+  if (live.history.at(-1)?.role !== "assistant") {
+    live.history.push({ role: "assistant", content: message.content });
+  }
+  threads.set(noteId, live);
+  return undefined;
 }
 
 function systemPrompt(): string {
@@ -200,7 +262,6 @@ export function AskAiPanel({
   const dialogRef = useRef<HTMLDialogElement>(null);
   const logRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
-  const abortRef = useRef<AbortController | null>(null);
   const noteIdRef = useRef(note.id);
   const onCloseRef = useRef(onClose);
   onCloseRef.current = onClose;
@@ -228,7 +289,8 @@ export function AskAiPanel({
     if (!dialog.open) dialog.showModal();
 
     const handleClose = () => {
-      abortRef.current?.abort();
+      abortTurn(noteIdRef.current);
+      settlePendingThread(noteIdRef.current);
       onCloseRef.current();
     };
     dialog.addEventListener("close", handleClose);
@@ -262,9 +324,10 @@ export function AskAiPanel({
   }, [draft]);
 
   async function runTurn(userText: string | null) {
-    abortRef.current?.abort();
+    abortTurn(note.id);
+    settlePendingThread(note.id);
     const controller = new AbortController();
-    abortRef.current = controller;
+    inflight.set(note.id, controller);
     const noteId = note.id;
     const contextContent = noteContextUserContent(note, authorName, engagement);
 
@@ -300,7 +363,10 @@ export function AskAiPanel({
     current.introStarted = true;
     persist(noteId, current);
 
+    const ownsTurn = () => inflight.get(noteId) === controller;
+
     const patchAssistant = (patch: Partial<Extract<VisibleMessage, { role: "assistant" }>>) => {
+      if (!ownsTurn()) return;
       const live = getThread(noteId);
       live.visible = live.visible.map((message) =>
         message.id === assistantId && message.role === "assistant"
@@ -311,38 +377,13 @@ export function AskAiPanel({
     };
 
     const settleAborted = () => {
-      const live = getThread(noteId);
-      const last = live.visible.find(
-        (message) => message.id === assistantId && message.role === "assistant"
-      );
-      if (last?.role === "assistant") {
-        if (!last.content) {
-          live.visible = live.visible.filter(
-            (message) =>
-              message.id !== assistantId && message.id !== userVisibleId
-          );
-          if (userText && live.history.at(-1)?.role === "user") {
-            live.history.pop();
-          }
-          if (!live.visible.some((message) => message.role === "assistant")) {
-            live.introStarted = false;
-            live.history = [];
-          }
-          if (noteIdRef.current === noteId && userText) {
-            setDraft(userText);
-          }
-        } else {
-          live.visible = live.visible.map((message) =>
-            message.id === assistantId && message.role === "assistant"
-              ? { ...message, pending: false }
-              : message
-          );
-          if (live.history.at(-1)?.role !== "assistant") {
-            live.history.push({ role: "assistant", content: last.content });
-          }
-        }
+      if (!ownsTurn()) return;
+      inflight.delete(noteId);
+      const restored = settlePendingThread(noteId);
+      persist(noteId, getThread(noteId));
+      if (noteIdRef.current === noteId && restored) {
+        setDraft(restored);
       }
-      persist(noteId, live);
     };
 
     try {
@@ -357,7 +398,7 @@ export function AskAiPanel({
         },
       });
 
-      if (controller.signal.aborted) {
+      if (controller.signal.aborted || !ownsTurn()) {
         settleAborted();
         return;
       }
@@ -393,7 +434,7 @@ export function AskAiPanel({
       }
       persist(noteId, live);
     } catch (error) {
-      if (controller.signal.aborted || isAbortError(error)) {
+      if (controller.signal.aborted || isAbortError(error) || !ownsTurn()) {
         settleAborted();
         return;
       }
@@ -421,7 +462,7 @@ export function AskAiPanel({
       }
       persist(noteId, live);
     } finally {
-      if (abortRef.current === controller) abortRef.current = null;
+      if (inflight.get(noteId) === controller) inflight.delete(noteId);
     }
   }
 
@@ -429,13 +470,21 @@ export function AskAiPanel({
   runTurnRef.current = runTurn;
 
   useEffect(() => {
-    const current = getThread(note.id);
-    if (current.introStarted || current.visible.length > 0) return;
-    current.introStarted = true;
-    threads.set(note.id, current);
-    void runTurnRef.current(null);
+    const noteId = note.id;
+    if (!isTurnLive(noteId)) {
+      abortTurn(noteId);
+      settlePendingThread(noteId);
+      persist(noteId, getThread(noteId));
+    }
+    const current = getThread(noteId);
+    if (!current.introStarted && current.visible.length === 0) {
+      current.introStarted = true;
+      threads.set(noteId, current);
+      void runTurnRef.current(null);
+    }
     return () => {
-      abortRef.current?.abort();
+      abortTurn(noteId);
+      settlePendingThread(noteId);
     };
   }, [note.id]);
 
@@ -483,16 +532,17 @@ export function AskAiPanel({
 
   function handleClear() {
     if (busy) return;
-    abortRef.current?.abort();
-    abortRef.current = null;
+    abortTurn(note.id);
     const fresh = emptyThread();
-    threads.set(note.id, fresh);
-    setThread(fresh);
+    persist(note.id, fresh);
     void runTurn(null);
   }
 
   function handleStop() {
-    abortRef.current?.abort();
+    abortTurn(note.id);
+    const restored = settlePendingThread(note.id);
+    persist(note.id, getThread(note.id));
+    if (restored) setDraft(restored);
   }
 
   const snippet = note.content.trim().replace(/\s+/g, " ");
