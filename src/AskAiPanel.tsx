@@ -1,10 +1,12 @@
 import {
   useEffect,
   useId,
+  useImperativeHandle,
   useRef,
   useState,
   type FormEvent,
   type KeyboardEvent,
+  type Ref,
 } from "react";
 import {
   completeChat,
@@ -221,6 +223,16 @@ function SparkleIcon() {
   );
 }
 
+const DRAWER_CLOSE_MS = 360;
+
+function prefersReducedMotion(): boolean {
+  return window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+}
+
+export type AskAiPanelHandle = {
+  close: () => void;
+};
+
 export function AskAiButton({
   pressed,
   onClick,
@@ -253,19 +265,27 @@ export function AskAiPanel({
   profile,
   engagement,
   onClose,
+  ref,
 }: {
   note: LocatedEvent;
   profile?: Kind0Profile;
   engagement?: NoteEngagement;
   onClose: () => void;
+  ref?: Ref<AskAiPanelHandle>;
 }) {
   const dialogRef = useRef<HTMLDialogElement>(null);
   const logRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const noteIdRef = useRef(note.id);
   const onCloseRef = useRef(onClose);
+  const startCloseRef = useRef<() => void>(() => {});
+  const closeTimerRef = useRef(0);
   onCloseRef.current = onClose;
   noteIdRef.current = note.id;
+
+  useImperativeHandle(ref, () => ({
+    close: () => startCloseRef.current(),
+  }));
 
   const titleId = useId();
   const authorName = profileLabel(note.pubkey, profile?.displayName);
@@ -286,21 +306,65 @@ export function AskAiPanel({
   useEffect(() => {
     const dialog = dialogRef.current;
     if (!dialog) return;
-    if (!dialog.open) dialog.showModal();
+    if (!dialog.open) {
+      dialog.classList.remove("is-closing");
+      dialog.showModal();
+    }
+
+    const startClose = () => {
+      if (!dialog.open || dialog.classList.contains("is-closing")) return;
+      if (prefersReducedMotion()) {
+        dialog.close();
+        return;
+      }
+      dialog.classList.add("is-closing");
+      window.clearTimeout(closeTimerRef.current);
+      closeTimerRef.current = window.setTimeout(() => {
+        if (dialog.open && dialog.classList.contains("is-closing")) {
+          dialog.close();
+        }
+      }, DRAWER_CLOSE_MS);
+    };
+    startCloseRef.current = startClose;
+
+    const handleAnimationEnd = (event: AnimationEvent) => {
+      if (event.target !== dialog) return;
+      if (event.animationName !== "ask-ai-drawer-out") return;
+      if (!dialog.classList.contains("is-closing")) return;
+      window.clearTimeout(closeTimerRef.current);
+      dialog.close();
+    };
+
+    const handleCancel = (event: Event) => {
+      event.preventDefault();
+      startClose();
+    };
 
     const handleClose = () => {
       abortTurn(noteIdRef.current);
       settlePendingThread(noteIdRef.current);
       onCloseRef.current();
     };
+
+    dialog.addEventListener("animationend", handleAnimationEnd);
+    dialog.addEventListener("cancel", handleCancel);
     dialog.addEventListener("close", handleClose);
     return () => {
+      window.clearTimeout(closeTimerRef.current);
+      startCloseRef.current = () => {};
+      dialog.removeEventListener("animationend", handleAnimationEnd);
+      dialog.removeEventListener("cancel", handleCancel);
       dialog.removeEventListener("close", handleClose);
       if (dialog.open) dialog.close();
     };
   }, []);
 
   useEffect(() => {
+    const dialog = dialogRef.current;
+    if (dialog?.classList.contains("is-closing")) {
+      window.clearTimeout(closeTimerRef.current);
+      dialog.classList.remove("is-closing");
+    }
     setThread(snapshot(getThread(note.id)));
     setDraft("");
   }, [note.id]);
@@ -561,7 +625,7 @@ export function AskAiPanel({
           event.clientY < rect.top ||
           event.clientY > rect.bottom
         ) {
-          dialog.close();
+          startCloseRef.current();
         }
       }}
     >
@@ -581,7 +645,7 @@ export function AskAiPanel({
             type="button"
             className="ask-ai-icon-btn"
             aria-label="Close"
-            onClick={() => dialogRef.current?.close()}
+            onClick={() => startCloseRef.current()}
           >
             <svg width="14" height="14" viewBox="0 0 14 14" aria-hidden="true">
               <path
