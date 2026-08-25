@@ -342,7 +342,7 @@ export function AskAiPanel({
           patchAssistant({ status });
         },
         onDelta(text) {
-          patchAssistant({ content: text, pending: false });
+          patchAssistant({ content: text });
         },
       });
 
@@ -527,13 +527,14 @@ export function AskAiPanel({
                 </div>
               );
             }
+            const waiting = Boolean(message.pending && !message.content);
             return (
               <div
                 key={message.id}
-                className={`ask-ai-msg assistant${message.pending ? " pending" : ""}`}
+                className={`ask-ai-msg assistant${waiting ? " pending" : ""}`}
               >
                 <span className="ask-ai-msg-label">Assistant</span>
-                {message.pending ? (
+                {waiting ? (
                   <span
                     className="ask-ai-typing"
                     aria-label={`${statusLabel(message.status ?? "waiting")} for response`}
