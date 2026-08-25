@@ -365,12 +365,24 @@ export function AskAiPanel({
       const live = getThread(noteId);
       const content = result.content;
       if (!content) {
-        live.visible = live.visible.filter((message) => message.id !== assistantId);
+        if (userText && live.history.at(-1)?.role === "user") {
+          live.history.pop();
+        }
+        live.visible = live.visible.filter(
+          (message) =>
+            message.id !== assistantId && message.id !== userVisibleId
+        );
         live.visible.push({
           id: nextId(),
           role: "error",
           content: "The model returned an empty reply.",
         });
+        if (!live.visible.some((message) => message.role === "assistant")) {
+          live.introStarted = false;
+        }
+        if (noteIdRef.current === noteId && userText) {
+          setDraft(userText);
+        }
       } else {
         live.history.push({ role: "assistant", content });
         live.visible = live.visible.map((message) =>
