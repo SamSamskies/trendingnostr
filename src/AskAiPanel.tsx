@@ -390,7 +390,7 @@ export function AskAiPanel({
       const errorText = describeInferenceError(error);
 
       if (userText && live.history.at(-1)?.role === "user") {
-        live.history.push({ role: "assistant", content: errorText });
+        live.history.pop();
       }
       live.visible = live.visible.filter((message) => message.id !== assistantId);
       live.visible.push({
