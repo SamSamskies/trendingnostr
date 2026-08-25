@@ -387,15 +387,16 @@ export function AskAiPanel({
       }
 
       const live = getThread(noteId);
+      const errorText = describeInferenceError(error);
 
       if (userText && live.history.at(-1)?.role === "user") {
-        live.history.pop();
+        live.history.push({ role: "assistant", content: errorText });
       }
       live.visible = live.visible.filter((message) => message.id !== assistantId);
       live.visible.push({
         id: nextId(),
         role: "error",
-        content: describeInferenceError(error),
+        content: errorText,
       });
       if (!live.visible.some((message) => message.role === "assistant")) {
         live.introStarted = false;
