@@ -770,6 +770,34 @@ a.open-in-link:focus-visible {
   padding: 1rem;
 }
 
+.ask-ai-consent {
+  display: flex;
+  flex-direction: column;
+  gap: 0.7rem;
+  color: var(--ink);
+  font-size: 0.9rem;
+  line-height: 1.45;
+}
+
+.ask-ai-consent p {
+  margin: 0;
+}
+
+.ask-ai-consent a {
+  color: var(--accent);
+}
+
+.ask-ai-consent-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.45rem;
+}
+
+.ask-ai-msg.error a {
+  color: inherit;
+  font-weight: 600;
+}
+
 .ask-ai-msg {
   max-width: 100%;
   padding: 0.7rem 0.85rem;

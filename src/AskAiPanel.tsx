@@ -9,10 +9,15 @@ import {
   type Ref,
 } from "react";
 import {
+  canSearchWeb,
   completeChat,
   describeInferenceError,
+  INFERENCE_BRIDGE_HREF,
   isAbortError,
+  prepareInference,
+  setHostedConsent,
   type ChatStatus,
+  type InferenceGate,
   type InferenceMessage,
 } from "./inference";
 import { encodeNpub, type Kind0Profile } from "./identity";
@@ -134,17 +139,21 @@ function settlePendingThread(noteId: string): string | undefined {
   return undefined;
 }
 
-function systemPrompt(): string {
+function systemPrompt(canSearch: boolean): string {
   return [
     "You help someone read a public Nostr note from a trending feed.",
     "The reader can already see the note. There are no replies in this app, so do not summarize the text back to them.",
     "On the first reply, explain and check:",
     "- What is this referring to, and who or what is involved?",
-    "- If it makes a claim or shares news, is that actually true? Search if you need to.",
+    canSearch
+      ? "- If it makes a claim or shares news, is that actually true? Search if you need to."
+      : "- If it makes a claim or shares news, is that actually true? Say so if you cannot verify it.",
     "- If it is jargon, a meme, or an in-joke, explain it.",
     "- If it asks a question, answer it.",
     "- If it is a simple status or joke, say so in one line and stop.",
-    "You can search the public web when that would help: checking a claim, identifying a person or project, current events, or facts that are not in the note. Do not search when the note itself is enough. If you searched, say so briefly.",
+    canSearch
+      ? "You can search the public web when that would help: checking a claim, identifying a person or project, current events, or facts that are not in the note. Do not search when the note itself is enough. If you searched, say so briefly."
+      : "You cannot search the web. Do not claim you searched. If a claim needs verification you cannot do, say so.",
     "Keep answers short. Light markdown is fine: bold, short lists, and links. Do not use headings or code fences.",
     "You are not the note's author. If you are unsure, say so. Invite a follow-up when it would help.",
   ].join("\n");
@@ -160,8 +169,11 @@ function formatEngagement(stats?: NoteEngagement): string {
   ].join(", ");
 }
 
-const NOTE_CONTEXT_INSTRUCTION =
-  "Explain this note and check whether its claims hold up. Search the web if that would help. Do not summarize the note.";
+function noteContextInstruction(canSearch: boolean): string {
+  return canSearch
+    ? "Explain this note and check whether its claims hold up. Search the web if that would help. Do not summarize the note."
+    : "Explain this note and check whether its claims hold up from the note and what you already know. Do not claim you searched the web. Do not summarize the note.";
+}
 
 function buildNoteContext(
   note: LocatedEvent,
@@ -196,9 +208,10 @@ function buildNoteContext(
 function noteContextUserContent(
   note: LocatedEvent,
   authorName: string,
-  stats?: NoteEngagement
+  stats: NoteEngagement | undefined,
+  canSearch: boolean
 ): string {
-  return `${buildNoteContext(note, authorName, stats)}\n\n${NOTE_CONTEXT_INSTRUCTION}`;
+  return `${buildNoteContext(note, authorName, stats)}\n\n${noteContextInstruction(canSearch)}`;
 }
 
 function patchNoteContextHistory(
@@ -292,6 +305,15 @@ export function AskAiPanel({
 
   const [thread, setThread] = useState<Thread>(() => snapshot(getThread(note.id)));
   const [draft, setDraft] = useState("");
+  const [probe, setProbe] = useState<{
+    noteId: string;
+    gate: InferenceGate | "checking";
+  }>({ noteId: note.id, gate: "checking" });
+  if (probe.noteId !== note.id) {
+    setProbe({ noteId: note.id, gate: "checking" });
+  }
+  const gate = probe.noteId === note.id ? probe.gate : "checking";
+  const ready = gate === "ipa" || gate === "hosted";
   const busy = thread.visible.some(
     (message) => message.role === "assistant" && message.pending
   );
@@ -376,9 +398,9 @@ export function AskAiPanel({
   }, [thread.visible]);
 
   useEffect(() => {
-    if (busy) return;
+    if (busy || !ready) return;
     inputRef.current?.focus();
-  }, [busy, note.id]);
+  }, [busy, note.id, ready]);
 
   useEffect(() => {
     const textarea = inputRef.current;
@@ -393,12 +415,18 @@ export function AskAiPanel({
     const controller = new AbortController();
     inflight.set(note.id, controller);
     const noteId = note.id;
-    const contextContent = noteContextUserContent(note, authorName, engagement);
+    const canSearch = canSearchWeb();
+    const contextContent = noteContextUserContent(
+      note,
+      authorName,
+      engagement,
+      canSearch
+    );
 
     const current = getThread(noteId);
     if (current.history.length === 0) {
       current.history = [
-        { role: "system", content: systemPrompt() },
+        { role: "system", content: systemPrompt(canSearch) },
         { role: "user", content: contextContent },
       ];
     } else {
@@ -534,6 +562,17 @@ export function AskAiPanel({
   runTurnRef.current = runTurn;
 
   useEffect(() => {
+    let cancelled = false;
+    void prepareInference().then((next) => {
+      if (!cancelled) setProbe({ noteId: note.id, gate: next });
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [note.id]);
+
+  useEffect(() => {
+    if (!ready) return;
     const noteId = note.id;
     if (!isTurnLive(noteId)) {
       abortTurn(noteId);
@@ -550,11 +589,16 @@ export function AskAiPanel({
       abortTurn(noteId);
       settlePendingThread(noteId);
     };
-  }, [note.id]);
+  }, [note.id, ready]);
 
   useEffect(() => {
     const current = getThread(note.id);
-    const nextContent = noteContextUserContent(note, authorName, engagement);
+    const nextContent = noteContextUserContent(
+      note,
+      authorName,
+      engagement,
+      canSearchWeb()
+    );
     if (!patchNoteContextHistory(current.history, nextContent)) return;
 
     const restartingIntro =
@@ -634,7 +678,9 @@ export function AskAiPanel({
           <div className="ask-ai-heading">
             <h2 id={titleId}>
               Ask AI
-              <span>May search the web</span>
+              {canSearchWeb() || gate === "hosted" || gate === "consent" ? (
+                <span>May search the web</span>
+              ) : null}
             </h2>
             <p className="ask-ai-about">
               About {authorName}
@@ -657,7 +703,73 @@ export function AskAiPanel({
         </header>
 
         <div ref={logRef} className="ask-ai-log" aria-live="polite">
-          {thread.visible.map((message) => {
+          {gate === "checking" ? (
+            <div className="ask-ai-msg assistant pending">
+              <span className="ask-ai-msg-label">Assistant</span>
+              <span className="ask-ai-typing" aria-label="Checking inference">
+                <span className="ask-ai-typing-label">Waiting</span>
+                <span className="ask-ai-typing-dots" aria-hidden="true">
+                  <span />
+                  <span />
+                  <span />
+                </span>
+              </span>
+            </div>
+          ) : null}
+          {gate === "consent" ? (
+            <div className="ask-ai-consent">
+              <p>
+                No inference extension was found. We can still run Ask AI
+                through a hosted model. The note and your questions will be sent
+                to our server, then to that model provider.
+              </p>
+              <p>
+                Install{" "}
+                <a
+                  href={INFERENCE_BRIDGE_HREF}
+                  target="_blank"
+                  rel="noreferrer"
+                >
+                  Inference Bridge
+                </a>{" "}
+                to keep inference in your browser instead.
+              </p>
+              <div className="ask-ai-consent-actions">
+                <button
+                  type="button"
+                  className="ask-ai-secondary"
+                  onClick={() => startCloseRef.current()}
+                >
+                  Not now
+                </button>
+                <button
+                  type="button"
+                  className="ask-ai-send"
+                  onClick={() => {
+                    setHostedConsent(true);
+                    setProbe({ noteId: note.id, gate: "hosted" });
+                  }}
+                >
+                  Use hosted
+                </button>
+              </div>
+            </div>
+          ) : null}
+          {gate === "unavailable" ? (
+            <div className="ask-ai-msg error">
+              Ask AI needs an Inference Provider extension such as{" "}
+              <a
+                href={INFERENCE_BRIDGE_HREF}
+                target="_blank"
+                rel="noreferrer"
+              >
+                Inference Bridge
+              </a>
+              , or a hosted inference endpoint.
+            </div>
+          ) : null}
+          {ready
+            ? thread.visible.map((message) => {
             if (message.role === "error") {
               return (
                 <div key={message.id} className="ask-ai-msg error">
@@ -702,9 +814,11 @@ export function AskAiPanel({
                 ) : null}
               </div>
             );
-          })}
+          })
+            : null}
         </div>
 
+        {ready ? (
         <form className="ask-ai-form" onSubmit={handleSubmit}>
           <textarea
             ref={inputRef}
@@ -748,6 +862,7 @@ export function AskAiPanel({
             )}
           </div>
         </form>
+        ) : null}
       </div>
     </dialog>
   );
