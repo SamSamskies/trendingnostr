@@ -179,8 +179,10 @@ export function AskAiPanel({
   const logRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const abortRef = useRef<AbortController | null>(null);
+  const noteIdRef = useRef(note.id);
   const onCloseRef = useRef(onClose);
   onCloseRef.current = onClose;
+  noteIdRef.current = note.id;
 
   const titleId = useId();
   const authorName = profileLabel(note.pubkey, profile?.displayName);
@@ -191,9 +193,11 @@ export function AskAiPanel({
     (message) => message.role === "assistant" && message.pending
   );
 
-  function publish(next: Thread) {
-    threads.set(note.id, next);
-    setThread(snapshot(next));
+  function persist(noteId: string, next: Thread) {
+    threads.set(noteId, next);
+    if (noteIdRef.current === noteId) {
+      setThread(snapshot(next));
+    }
   }
 
   useEffect(() => {
@@ -239,8 +243,9 @@ export function AskAiPanel({
     abortRef.current?.abort();
     const controller = new AbortController();
     abortRef.current = controller;
+    const noteId = note.id;
 
-    const current = getThread(note.id);
+    const current = getThread(noteId);
     if (current.history.length === 0) {
       current.history = [
         { role: "system", content: systemPrompt() },
@@ -271,16 +276,16 @@ export function AskAiPanel({
       status: "waiting",
     });
     current.introStarted = true;
-    publish(current);
+    persist(noteId, current);
 
     const patchAssistant = (patch: Partial<Extract<VisibleMessage, { role: "assistant" }>>) => {
-      const live = getThread(note.id);
+      const live = getThread(noteId);
       live.visible = live.visible.map((message) =>
         message.id === assistantId && message.role === "assistant"
           ? { ...message, ...patch }
           : message
       );
-      publish(live);
+      persist(noteId, live);
     };
 
     try {
@@ -297,7 +302,7 @@ export function AskAiPanel({
 
       if (controller.signal.aborted) return;
 
-      const live = getThread(note.id);
+      const live = getThread(noteId);
       const content = result.content;
       live.history.push({ role: "assistant", content });
       live.visible = live.visible.map((message) =>
@@ -313,9 +318,9 @@ export function AskAiPanel({
           content: "The model returned an empty reply.",
         });
       }
-      publish(live);
+      persist(noteId, live);
     } catch (error) {
-      const live = getThread(note.id);
+      const live = getThread(noteId);
       if (controller.signal.aborted || isAbortError(error)) {
         const last = live.visible.find(
           (message) => message.id === assistantId && message.role === "assistant"
@@ -338,7 +343,7 @@ export function AskAiPanel({
             }
           }
         }
-        publish(live);
+        persist(noteId, live);
         return;
       }
 
@@ -354,7 +359,7 @@ export function AskAiPanel({
       if (!live.visible.some((message) => message.role === "assistant")) {
         live.introStarted = false;
       }
-      publish(live);
+      persist(noteId, live);
     } finally {
       if (abortRef.current === controller) abortRef.current = null;
     }
