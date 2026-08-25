@@ -98,12 +98,18 @@ export function useInferenceAvailable(): boolean {
   );
 }
 
-function chatRequest(inference: Inference): InferenceRequestFn {
+function chatRequest(inference: Inference): {
+  request: InferenceRequestFn;
+  tools?: Array<{ type: "web_search" }>;
+} {
   const experimentalRequest = inference.experimental?.request;
   if (typeof experimentalRequest === "function") {
-    return experimentalRequest.bind(inference.experimental);
+    return {
+      request: experimentalRequest.bind(inference.experimental),
+      tools: [WEB_SEARCH_TOOL],
+    };
   }
-  return inference.request.bind(inference);
+  return { request: inference.request.bind(inference) };
 }
 
 export function isInferenceError(error: unknown): error is InferenceError {
@@ -184,12 +190,14 @@ export async function completeChat(options: {
     throw error;
   }
 
+  const { request, tools } = chatRequest(inference);
+
   return consumeChat(
-    chatRequest(inference),
+    request,
     {
       method: "chat",
       messages: options.messages,
-      tools: [WEB_SEARCH_TOOL],
+      ...(tools ? { tools } : {}),
       signal: options.signal,
     },
     options.onStatus,
