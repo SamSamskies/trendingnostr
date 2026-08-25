@@ -278,10 +278,12 @@ export function AskAiPanel({
       patchNoteContextHistory(current.history, contextContent);
     }
 
+    let userVisibleId: string | undefined;
     if (userText) {
+      userVisibleId = nextId();
       current.history.push({ role: "user", content: userText });
       current.visible.push({
-        id: nextId(),
+        id: userVisibleId,
         role: "user",
         content: userText,
       });
@@ -315,10 +317,19 @@ export function AskAiPanel({
       );
       if (last?.role === "assistant") {
         if (!last.content) {
-          live.visible = live.visible.filter((message) => message.id !== assistantId);
+          live.visible = live.visible.filter(
+            (message) =>
+              message.id !== assistantId && message.id !== userVisibleId
+          );
+          if (userText && live.history.at(-1)?.role === "user") {
+            live.history.pop();
+          }
           if (!live.visible.some((message) => message.role === "assistant")) {
             live.introStarted = false;
             live.history = [];
+          }
+          if (noteIdRef.current === noteId && userText) {
+            setDraft(userText);
           }
         } else {
           live.visible = live.visible.map((message) =>
