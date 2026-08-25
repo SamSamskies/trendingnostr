@@ -444,10 +444,12 @@ export function AskAiPanel({
     const nextContent = noteContextUserContent(note, authorName, engagement);
     if (!patchNoteContextHistory(current.history, nextContent)) return;
 
-    const restartingIntro = current.visible.some(
-      (message) =>
-        message.role === "assistant" && message.pending && !message.content
-    );
+    const restartingIntro =
+      !current.visible.some((message) => message.role === "user") &&
+      current.visible.some(
+        (message) =>
+          message.role === "assistant" && message.pending && !message.content
+      );
     if (restartingIntro) {
       current.visible = current.visible.filter(
         (message) =>
