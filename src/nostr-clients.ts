@@ -20,6 +20,8 @@ export const MAX_RELAY_HINTS = 3;
 /**
  * Kind-1 clients, ordered like njump: default handler, then native apps,
  * then web. Platform filtering happens in `clientsForPlatform`.
+ * The `nostr:` default handler is omitted on desktop — browsers there
+ * almost never have a registered scheme handler.
  *
  * Address (`naddr`) pickers use `ADDRESS_CLIENT_IDS` instead of this full
  * list — many kind-1 apps do not handle long-form/parameterized events.
@@ -138,6 +140,9 @@ export function clientsForPlatform(
   kind: OpenInKind = "note"
 ): NostrClient[] {
   const eligible = NOSTR_CLIENTS.filter((client) => {
+    if (client.platform === "native" && platform === "web") {
+      return false;
+    }
     if (
       client.platform !== "native" &&
       client.platform !== "web" &&
