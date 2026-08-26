@@ -560,13 +560,6 @@ a.open-in-link {
   box-sizing: border-box;
 }
 
-.open-in-status {
-  margin: 0.15rem 0 0;
-  text-align: center;
-  color: var(--muted);
-  font-size: 0.88rem;
-}
-
 .open-in-cancel {
   display: block;
   width: 100%;
