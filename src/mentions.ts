@@ -2,10 +2,10 @@ import { nip19 } from "nostr-tools";
 
 /** NIP-27 identifiers, with or without the `nostr:` prefix. */
 export const nostrUriRegex =
-  /((?:nostr:)?n(?:pub|profile|event|ote)1[02-9ac-hj-np-z]+)/gi;
+  /((?:nostr:)?n(?:pub|profile|event|ote|addr)1[02-9ac-hj-np-z]+)/gi;
 
 const NOSTR_URI =
-  /^(?:nostr:)?n(?:pub|profile|event|ote)1[02-9ac-hj-np-z]+$/i;
+  /^(?:nostr:)?n(?:pub|profile|event|ote|addr)1[02-9ac-hj-np-z]+$/i;
 
 export type Mention = {
   type: "profile";
@@ -19,7 +19,16 @@ export type NoteRef = {
   code: string;
 };
 
-export type NostrEntity = Mention | NoteRef;
+export type AddressRef = {
+  type: "address";
+  code: string;
+  kind: number;
+  pubkey: string;
+  identifier: string;
+  relayHints: string[];
+};
+
+export type NostrEntity = Mention | NoteRef | AddressRef;
 
 export type MentionIdentity = {
   pubkey: string;
@@ -58,6 +67,18 @@ export function parseNostrEntity(raw: string): NostrEntity | null {
     }
     if (decoded.type === "note" || decoded.type === "nevent") {
       return { type: "note", code };
+    }
+    if (decoded.type === "naddr") {
+      return {
+        type: "address",
+        code,
+        kind: decoded.data.kind,
+        pubkey: decoded.data.pubkey.toLowerCase(),
+        identifier: decoded.data.identifier,
+        relayHints: (decoded.data.relays ?? [])
+          .map((url) => url.replace(/\/+$/, ""))
+          .filter((url) => url.startsWith("wss://")),
+      };
     }
   } catch {
     return null;

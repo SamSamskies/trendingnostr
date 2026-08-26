@@ -1,4 +1,4 @@
-import { useEffect, useId, useRef } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import {
   clientHref,
   clientsForPlatform,
@@ -6,6 +6,11 @@ import {
   isWebClientHref,
   type OpenInKind,
 } from "./nostr-clients";
+import {
+  addressPlaceholderLinks,
+  fetchAddressOpenInLinks,
+  type OpenInLink,
+} from "./nip89";
 
 export type OpenInTarget = {
   kind: OpenInKind;
@@ -22,6 +27,14 @@ export function NoteMenuIcon() {
   );
 }
 
+function staticOpenInLinks(kind: OpenInKind, code: string): OpenInLink[] {
+  return clientsForPlatform(detectClientPlatform()).map((client) => ({
+    id: client.id,
+    name: client.name,
+    href: clientHref(client, code, kind),
+  }));
+}
+
 export function OpenInDialog({
   target,
   onClose,
@@ -32,7 +45,11 @@ export function OpenInDialog({
   const dialogRef = useRef<HTMLDialogElement>(null);
   const titleId = useId();
   const { kind, code } = target;
-  const clients = clientsForPlatform(detectClientPlatform());
+  const isAddress = kind === "address";
+  const [links, setLinks] = useState<OpenInLink[]>(() =>
+    isAddress ? addressPlaceholderLinks(code) : staticOpenInLinks(kind, code)
+  );
+  const [loading, setLoading] = useState(isAddress);
   const onCloseRef = useRef(onClose);
   onCloseRef.current = onClose;
 
@@ -49,6 +66,27 @@ export function OpenInDialog({
     };
   }, []);
 
+  useEffect(() => {
+    if (!isAddress) {
+      setLinks(staticOpenInLinks(kind, code));
+      setLoading(false);
+      return;
+    }
+
+    let cancelled = false;
+    setLinks(addressPlaceholderLinks(code));
+    setLoading(true);
+    void fetchAddressOpenInLinks(code).then((next) => {
+      if (cancelled) return;
+      setLinks(next);
+      setLoading(false);
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [isAddress, kind, code]);
+
   if (!code) return null;
 
   return (
@@ -56,6 +94,7 @@ export function OpenInDialog({
       ref={dialogRef}
       className="open-in-dialog"
       aria-labelledby={titleId}
+      aria-busy={loading || undefined}
       onClick={(event) => {
         if (event.target === event.currentTarget) event.currentTarget.close();
       }}
@@ -64,23 +103,23 @@ export function OpenInDialog({
         Open in
       </h2>
       <div className="open-in-list">
-        {clients.map((client, index) => {
-          const href = clientHref(client, code, kind);
-          return (
-            <a
-              key={client.id}
-              className={
-                index === 0 ? "open-in-link primary" : "open-in-link secondary"
-              }
-              href={href}
-              {...(isWebClientHref(href)
-                ? { target: "_blank", rel: "noopener noreferrer" }
-                : {})}
-            >
-              {client.name}
-            </a>
-          );
-        })}
+        {links.map((link, index) => (
+          <a
+            key={link.id}
+            className={
+              index === 0 ? "open-in-link primary" : "open-in-link secondary"
+            }
+            href={link.href}
+            {...(isWebClientHref(link.href)
+              ? { target: "_blank", rel: "noopener noreferrer" }
+              : {})}
+          >
+            {link.name}
+          </a>
+        ))}
+        {loading ? (
+          <p className="open-in-status">Looking up apps…</p>
+        ) : null}
       </div>
       <button
         type="button"
