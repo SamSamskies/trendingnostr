@@ -28,6 +28,11 @@ export const PROFILE_RELAYS = [
   "wss://purplepag.es",
 ] as const;
 
+/** Authors hidden from the trending feed (lowercase hex pubkeys). */
+const HIDDEN_AUTHOR_PUBKEYS = new Set([
+  "d71f47ad20f6a4b9363d8a319a539332e77980f8d52dee9a0073da36c4062369",
+]);
+
 export const RELAY_MAX_WAIT_MS = 4500;
 /** How many times to retry a failed trending-relay connection. */
 export const TRENDING_FETCH_ATTEMPTS = 3;
@@ -68,6 +73,7 @@ function toLocatedEvents(
   const ordered: LocatedEvent[] = [];
   const seen = new Set<string>();
   for (const event of events) {
+    if (HIDDEN_AUTHOR_PUBKEYS.has(event.pubkey.toLowerCase())) continue;
     if (seen.has(event.id)) continue;
     seen.add(event.id);
     ordered.push({ ...event, seenOn: [...seenOn] });
