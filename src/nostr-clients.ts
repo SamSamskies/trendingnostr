@@ -20,6 +20,9 @@ export const MAX_RELAY_HINTS = 3;
 /**
  * Kind-1 clients, ordered like njump: default handler, then native apps,
  * then web. Platform filtering happens in `clientsForPlatform`.
+ *
+ * Address (`naddr`) pickers use `ADDRESS_CLIENT_IDS` instead of this full
+ * list — many kind-1 apps do not handle long-form/parameterized events.
  */
 export const NOSTR_CLIENTS: NostrClient[] = [
   {
@@ -89,6 +92,21 @@ export const NOSTR_CLIENTS: NostrClient[] = [
   },
 ];
 
+/**
+ * Known clients that actually open `naddr` well. Do not discover extra
+ * apps via NIP-89 here: this app has no follow graph, so kind 31990 is an
+ * untrusted redirect surface.
+ */
+export const ADDRESS_CLIENT_IDS = new Set([
+  "native",
+  "primal-ios",
+  "amethyst",
+  "primal-android",
+  "primal-web",
+  "yakihonne",
+  "njump",
+]);
+
 export function detectClientPlatform(
   userAgent = typeof navigator === "undefined" ? "" : navigator.userAgent
 ): ClientPlatform {
@@ -115,13 +133,23 @@ export function clientHref(
   return template.replaceAll("{code}", code);
 }
 
-export function clientsForPlatform(platform: ClientPlatform): NostrClient[] {
-  const eligible = NOSTR_CLIENTS.filter(
-    (client) =>
-      client.platform === "native" ||
-      client.platform === "web" ||
-      client.platform === platform
-  );
+export function clientsForPlatform(
+  platform: ClientPlatform,
+  kind: OpenInKind = "note"
+): NostrClient[] {
+  const eligible = NOSTR_CLIENTS.filter((client) => {
+    if (
+      client.platform !== "native" &&
+      client.platform !== "web" &&
+      client.platform !== platform
+    ) {
+      return false;
+    }
+    if (kind === "address" && !ADDRESS_CLIENT_IDS.has(client.id)) {
+      return false;
+    }
+    return true;
+  });
 
   const seen = new Set<string>();
   const clients: NostrClient[] = [];
