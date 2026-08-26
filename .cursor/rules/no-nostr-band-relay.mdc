@@ -1,0 +1,20 @@
+---
+description: Never use relay.nostr.band — it is dead and must not appear in relay lists or queries.
+alwaysApply: true
+---
+
+# Do not use relay.nostr.band
+
+`wss://relay.nostr.band` is a dead relay. Never add it to hardcoded lists, fallbacks, naddr/nprofile hint handling, or ad-hoc queries.
+
+Prefer relays this app already uses (`wss://relay.damus.io`, `wss://relay.primal.net`, `wss://relay.ditto.pub`, `wss://purplepag.es`, `wss://relay.vertexlab.io`).
+
+```ts
+// ❌ BAD
+"wss://relay.nostr.band"
+
+// ✅ GOOD
+"wss://relay.ditto.pub"
+```
+
+If a NIP-19 entity includes `relay.nostr.band` as a hint, drop that hint. Do not special-case other `*.nostr.band` HTTP APIs unless they are also known dead.

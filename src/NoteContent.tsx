@@ -100,22 +100,32 @@ export const NoteContent = ({
 
         const entity = parseNostrEntity(part);
         if (entity) {
-          const kind: OpenInKind = entity.type === "profile" ? "profile" : "note";
+          const kind: OpenInKind =
+            entity.type === "profile"
+              ? "profile"
+              : entity.type === "address"
+                ? "address"
+                : "note";
           const label =
             entity.type === "profile"
               ? mentionLabel(
                   entity.pubkey,
                   profiles[entity.pubkey]?.displayName
                 )
-              : noteRefLabel(entity.code);
+              : entity.type === "address"
+                ? entity.code
+                : noteRefLabel(entity.code);
 
           return (
             <a
               key={index}
-              className="note-mention"
+              className={
+                entity.type === "address" ? undefined : "note-mention"
+              }
               href={njumpHref(entity.code)}
               target="_blank"
               rel="noreferrer"
+              title={part}
               onClick={(event) => {
                 if (!onOpen) return;
                 if (!isUnmodifiedLeftClick(event)) return;

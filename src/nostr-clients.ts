@@ -3,7 +3,7 @@ import type { LocatedEvent } from "./nostr";
 
 export type ClientPlatform = "android" | "ios" | "web";
 
-export type OpenInKind = "note" | "profile";
+export type OpenInKind = "note" | "profile" | "address";
 
 export type NostrClient = {
   id: string;
