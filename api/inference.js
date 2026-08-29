@@ -210,6 +210,7 @@ function promptChars(system, contents) {
 }
 
 const MAX_INLINE_IMAGE_BYTES = 4_000_000;
+const MAX_IMAGE_FETCH_REDIRECTS = 5;
 
 function contentsHaveFileData(contents) {
   return contents.some((content) =>
@@ -217,10 +218,50 @@ function contentsHaveFileData(contents) {
   );
 }
 
-async function fetchImageAsInlineData(fileUri, mimeType, signal) {
+/** Block localhost, RFC1918, link-local, and cloud-metadata targets (SSRF). */
+function isPrivateOrLocalHostname(hostname) {
+  const host = String(hostname || "")
+    .toLowerCase()
+    .replace(/^\[|\]$/g, "");
+  if (!host || host === "localhost" || host.endsWith(".localhost")) return true;
+  if (host === "local" || host.endsWith(".local")) return true;
+  if (host === "metadata.google.internal" || host.endsWith(".internal")) {
+    return true;
+  }
+  if (host === "::1" || host === "0.0.0.0" || host === "::") return true;
+
+  const ipv4 = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/.exec(host);
+  if (ipv4) {
+    const octets = ipv4.slice(1).map(Number);
+    if (octets.some((n) => n > 255)) return true;
+    const [a, b] = octets;
+    if (a === 0 || a === 10 || a === 127) return true;
+    if (a === 169 && b === 254) return true;
+    if (a === 172 && b >= 16 && b <= 31) return true;
+    if (a === 192 && b === 168) return true;
+    if (a === 100 && b >= 64 && b <= 127) return true;
+    return false;
+  }
+
+  if (host.includes(":")) {
+    if (
+      host.startsWith("fe80:") ||
+      host.startsWith("fc") ||
+      host.startsWith("fd")
+    ) {
+      return true;
+    }
+    const mapped = /:ffff:(\d{1,3}(?:\.\d{1,3}){3})$/i.exec(host);
+    if (mapped) return isPrivateOrLocalHostname(mapped[1]);
+  }
+
+  return false;
+}
+
+function assertSafeImageFetchUrl(fileUri, base) {
   let parsed;
   try {
-    parsed = new URL(fileUri);
+    parsed = base ? new URL(fileUri, base) : new URL(fileUri);
   } catch {
     throw new Error("image_fetch_url");
   }
@@ -230,17 +271,39 @@ async function fetchImageAsInlineData(fileUri, mimeType, signal) {
   if (parsed.username || parsed.password) {
     throw new Error("image_fetch_url");
   }
+  if (isPrivateOrLocalHostname(parsed.hostname)) {
+    throw new Error("image_fetch_url");
+  }
+  return parsed;
+}
 
-  const res = await fetch(fileUri, {
-    method: "GET",
-    redirect: "follow",
-    signal,
-    headers: {
-      // Some media CDNs reject bare bot fetches.
-      Accept: "image/*,*/*;q=0.8",
-      "User-Agent": "trendingnostr-inference/1.0",
-    },
-  });
+async function fetchImageAsInlineData(fileUri, mimeType, signal) {
+  let current = assertSafeImageFetchUrl(fileUri);
+  let res;
+
+  for (let hop = 0; hop <= MAX_IMAGE_FETCH_REDIRECTS; hop++) {
+    res = await fetch(current.href, {
+      method: "GET",
+      redirect: "manual",
+      signal,
+      headers: {
+        // Some media CDNs reject bare bot fetches.
+        Accept: "image/*,*/*;q=0.8",
+        "User-Agent": "trendingnostr-inference/1.0",
+      },
+    });
+
+    if (res.status < 300 || res.status >= 400) break;
+
+    const location = res.headers.get("location");
+    if (!location) throw new Error("image_fetch_url");
+    // Re-validate every hop so redirects cannot pivot into private/metadata nets.
+    current = assertSafeImageFetchUrl(location, current.href);
+  }
+
+  if (!res || (res.status >= 300 && res.status < 400)) {
+    throw new Error("image_fetch_url");
+  }
   if (!res.ok) {
     throw new Error(`image_fetch_http_${res.status}`);
   }
@@ -252,7 +315,9 @@ async function fetchImageAsInlineData(fileUri, mimeType, signal) {
     (res.headers.get("content-type") || "").split(";")[0]
   );
   const mime =
-    headerMime || normalizeImageMime(mimeType) || guessImageMime(fileUri);
+    headerMime ||
+    normalizeImageMime(mimeType) ||
+    guessImageMime(current.href);
   return {
     inlineData: {
       mimeType: mime,
