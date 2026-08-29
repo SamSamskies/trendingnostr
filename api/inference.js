@@ -80,26 +80,114 @@ function releaseClient(key) {
   cur.count -= 1;
 }
 
+const IMAGE_MEDIA_TYPES = new Set([
+  "image/jpeg",
+  "image/png",
+  "image/webp",
+  "image/gif",
+]);
+
+function guessImageMime(url) {
+  try {
+    const path = new URL(url).pathname.toLowerCase();
+    if (path.endsWith(".png")) return "image/png";
+    if (path.endsWith(".webp")) return "image/webp";
+    if (path.endsWith(".gif")) return "image/gif";
+    if (
+      path.endsWith(".jpg") ||
+      path.endsWith(".jpeg") ||
+      path.endsWith(".jfif")
+    ) {
+      return "image/jpeg";
+    }
+  } catch {
+    // ignore
+  }
+  return "image/jpeg";
+}
+
+function normalizeImageMime(raw) {
+  if (typeof raw !== "string") return undefined;
+  const mime = raw.trim().toLowerCase();
+  if (mime === "image/jpg") return "image/jpeg";
+  if (IMAGE_MEDIA_TYPES.has(mime)) return mime;
+  return undefined;
+}
+
+/** Map IPA ContentPart[] / string into Gemini generateContent parts. */
+function toGeminiParts(content) {
+  if (typeof content === "string") {
+    return content.trim() ? [{ text: content }] : [];
+  }
+  if (!Array.isArray(content)) return [];
+
+  const parts = [];
+  for (const part of content) {
+    if (part == null || typeof part !== "object") continue;
+    if (part.type === "text" && typeof part.text === "string") {
+      if (part.text.trim()) parts.push({ text: part.text });
+      continue;
+    }
+    if (part.type !== "image") continue;
+
+    if (typeof part.url === "string" && part.url.trim()) {
+      const mime =
+        normalizeImageMime(part.mediaType) || guessImageMime(part.url);
+      parts.push({
+        fileData: {
+          fileUri: part.url.trim(),
+          mimeType: mime,
+        },
+      });
+      continue;
+    }
+
+    const mime = normalizeImageMime(part.mediaType);
+    const data = typeof part.data === "string" ? part.data.trim() : "";
+    if (mime && data) {
+      parts.push({
+        inlineData: {
+          mimeType: mime,
+          data,
+        },
+      });
+    }
+  }
+  return parts;
+}
+
 function toGeminiContents(messages) {
   let system = "";
   const contents = [];
 
   for (const msg of messages) {
     if (msg == null || typeof msg !== "object") continue;
-    const content = typeof msg.content === "string" ? msg.content : "";
     if (msg.role === "system") {
+      const content = typeof msg.content === "string" ? msg.content : "";
       if (content.trim()) {
         system = system ? `${system}\n\n${content}` : content;
       }
       continue;
     }
-    if (!content.trim()) continue;
+
+    const parts = toGeminiParts(msg.content);
+    if (parts.length === 0) continue;
+
     const role = msg.role === "assistant" ? "model" : "user";
     const prev = contents[contents.length - 1];
     if (prev && prev.role === role) {
-      prev.parts[0].text += `\n\n${content}`;
+      // Merge consecutive same-role turns (text-only concat when both are plain text).
+      const prevOnlyText =
+        prev.parts.length === 1 && typeof prev.parts[0].text === "string";
+      const nextOnlyText =
+        parts.length === 1 && typeof parts[0].text === "string";
+      if (prevOnlyText && nextOnlyText) {
+        prev.parts[0].text += `\n\n${parts[0].text}`;
+      } else {
+        prev.parts.push(...parts);
+      }
     } else {
-      contents.push({ role, parts: [{ text: content }] });
+      contents.push({ role, parts });
     }
   }
 
@@ -112,9 +200,110 @@ function toGeminiContents(messages) {
 function promptChars(system, contents) {
   let total = system.length;
   for (const content of contents) {
-    for (const part of content.parts) total += part.text.length;
+    for (const part of content.parts) {
+      if (typeof part.text === "string") total += part.text.length;
+      else if (part.fileData?.fileUri) total += part.fileData.fileUri.length;
+      else if (part.inlineData?.data) total += part.inlineData.data.length;
+    }
   }
   return total;
+}
+
+const MAX_INLINE_IMAGE_BYTES = 4_000_000;
+
+function contentsHaveFileData(contents) {
+  return contents.some((content) =>
+    content.parts.some((part) => part.fileData?.fileUri)
+  );
+}
+
+async function fetchImageAsInlineData(fileUri, mimeType, signal) {
+  let parsed;
+  try {
+    parsed = new URL(fileUri);
+  } catch {
+    throw new Error("image_fetch_url");
+  }
+  if (parsed.protocol !== "https:" && parsed.protocol !== "http:") {
+    throw new Error("image_fetch_url");
+  }
+  if (parsed.username || parsed.password) {
+    throw new Error("image_fetch_url");
+  }
+
+  const res = await fetch(fileUri, {
+    method: "GET",
+    redirect: "follow",
+    signal,
+    headers: {
+      // Some media CDNs reject bare bot fetches.
+      Accept: "image/*,*/*;q=0.8",
+      "User-Agent": "trendingnostr-inference/1.0",
+    },
+  });
+  if (!res.ok) {
+    throw new Error(`image_fetch_http_${res.status}`);
+  }
+  const buffer = Buffer.from(await res.arrayBuffer());
+  if (buffer.byteLength === 0 || buffer.byteLength > MAX_INLINE_IMAGE_BYTES) {
+    throw new Error("image_fetch_size");
+  }
+  const headerMime = normalizeImageMime(
+    (res.headers.get("content-type") || "").split(";")[0]
+  );
+  const mime =
+    headerMime || normalizeImageMime(mimeType) || guessImageMime(fileUri);
+  return {
+    inlineData: {
+      mimeType: mime,
+      data: buffer.toString("base64"),
+    },
+  };
+}
+
+/**
+ * Resolve `{ fileData }` to `{ inlineData }` in our process. Google's URL fetch
+ * often fails or 503s on Nostr/Blossom CDNs; bytes we can reach work more often.
+ * Leave fileData only when our fetch fails so Gemini can still try.
+ */
+async function resolveImagesToInline(contents, signal) {
+  const next = [];
+  for (const content of contents) {
+    const parts = [];
+    for (const part of content.parts) {
+      if (!part.fileData?.fileUri) {
+        parts.push(part);
+        continue;
+      }
+      try {
+        parts.push(
+          await fetchImageAsInlineData(
+            part.fileData.fileUri,
+            part.fileData.mimeType,
+            signal
+          )
+        );
+      } catch (error) {
+        console.warn("[api/inference] image fetch failed", {
+          uri: String(part.fileData.fileUri).slice(0, 120),
+          error: error instanceof Error ? error.message : "unknown",
+        });
+        parts.push(part);
+      }
+    }
+    next.push({ ...content, parts });
+  }
+  return next;
+}
+
+function looksLikeCapacityError(errJson, httpStatus) {
+  if (httpStatus !== 500 && httpStatus !== 503 && httpStatus !== 502) {
+    return false;
+  }
+  const text = collectStrings(errJson).join(" ");
+  return /high demand|try again later|temporarily|UNAVAILABLE|overloaded|capacity/i.test(
+    text
+  );
 }
 
 function readBody(req) {
@@ -250,17 +439,59 @@ export default async function handler(req, res) {
     geminiBody.generationConfig = generationConfig;
   }
 
-  let geminiRes;
-  try {
-    geminiRes = await fetch(url, {
+  // Hosted path: pull image bytes ourselves first. Relying on Gemini fileUri
+  // fetch for Nostr CDNs often returns 503 / fetch failures.
+  if (contentsHaveFileData(geminiBody.contents)) {
+    geminiBody.contents = await resolveImagesToInline(geminiBody.contents);
+  }
+
+  async function postGemini(body) {
+    return fetch(url, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(geminiBody),
+      body: JSON.stringify(body),
     });
+  }
+
+  let geminiRes;
+  try {
+    geminiRes = await postGemini(geminiBody);
   } catch {
     releaseClient(clientId);
     res.status(502).json({ error: "provider_error" });
     return;
+  }
+
+  // One capacity retry for transient Gemini 503s (common on multimodal).
+  if (geminiRes.status === 503) {
+    let errJson = null;
+    try {
+      errJson = await geminiRes.json();
+    } catch {
+      errJson = null;
+    }
+    if (looksLikeCapacityError(errJson, 503)) {
+      console.warn("[api/inference] provider 503 capacity; retrying once", {
+        message: geminiErrorMessage(errJson)?.slice(0, 200),
+      });
+      try {
+        await new Promise((r) => setTimeout(r, 800));
+        geminiRes = await postGemini(geminiBody);
+      } catch {
+        releaseClient(clientId);
+        res.status(503).json({ error: "provider_busy" });
+        return;
+      }
+    } else {
+      releaseClient(clientId);
+      console.warn("[api/inference] provider error", {
+        http: 503,
+        status: errJson?.error?.status,
+        message: geminiErrorMessage(errJson)?.slice(0, 200),
+      });
+      res.status(503).json({ error: "provider_busy" });
+      return;
+    }
   }
 
   if (geminiRes.status === 429) {
@@ -288,20 +519,26 @@ export default async function handler(req, res) {
 
   if (!geminiRes.ok) {
     releaseClient(clientId);
-    let providerStatus;
+    let errJson = null;
     try {
-      const errJson = await geminiRes.json();
-      providerStatus = errJson.error?.status;
-      console.warn("[api/inference] provider error", {
-        http: geminiRes.status,
-        status: providerStatus,
-        message: errJson.error?.message?.slice(0, 200),
-      });
+      errJson = await geminiRes.json();
     } catch {
-      console.warn("[api/inference] provider error", {
-        http: geminiRes.status,
-      });
+      errJson = null;
     }
+    if (looksLikeCapacityError(errJson, geminiRes.status)) {
+      console.warn("[api/inference] provider capacity", {
+        http: geminiRes.status,
+        message: geminiErrorMessage(errJson)?.slice(0, 200),
+      });
+      res.status(503).json({ error: "provider_busy" });
+      return;
+    }
+    const providerStatus = errJson?.error?.status;
+    console.warn("[api/inference] provider error", {
+      http: geminiRes.status,
+      status: providerStatus,
+      message: geminiErrorMessage(errJson)?.slice(0, 200),
+    });
     const status = geminiRes.status >= 500 ? 502 : 400;
     res.status(status).json({
       error: "provider_error",

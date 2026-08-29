@@ -19,6 +19,7 @@ const CLIENT_SOFT_DAILY = 50;
 const HOSTED_FEATURES: InferenceFeatures = {
   toolCalling: false,
   webSearch: true,
+  imageInput: true,
   options: { reasoningEffort: true, temperature: true },
 };
 
@@ -145,11 +146,35 @@ export function createHostedBackend(): InferenceBackend {
           if (errorCode === "rate_limited") {
             throw makeInferenceError("unavailable", "rate_limited");
           }
+          if (errorCode === "provider_busy") {
+            throw makeInferenceError("unavailable", "provider_busy");
+          }
           if (res.status === 429 || errorCode === "quota_exhausted") {
             throw makeInferenceError("unavailable", "quota_exhausted");
           }
-          if (res.status === 503 || errorCode === "disabled") {
+          if (errorCode === "disabled" || errorCode === "missing_api_key") {
             throw makeInferenceError("unavailable", "Hosted inference disabled");
+          }
+          const providerStatus =
+            data &&
+            typeof data === "object" &&
+            typeof (data as { providerStatus?: unknown }).providerStatus ===
+              "string"
+              ? (data as { providerStatus: string }).providerStatus
+              : null;
+          const providerHttp =
+            data &&
+            typeof data === "object" &&
+            typeof (data as { http?: unknown }).http === "number"
+              ? (data as { http: number }).http
+              : null;
+          // Gemini high-demand 503s (and older 502 wrappers).
+          if (
+            res.status === 503 ||
+            providerStatus === "UNAVAILABLE" ||
+            providerHttp === 503
+          ) {
+            throw makeInferenceError("unavailable", "provider_busy");
           }
           if (!res.ok) {
             throw makeInferenceError(

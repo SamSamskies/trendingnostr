@@ -8,6 +8,7 @@ import {
   type KeyboardEvent,
   type Ref,
 } from "react";
+import type { ContentPart } from "ipa-tools";
 import {
   canSearchWeb,
   completeChat,
@@ -15,15 +16,16 @@ import {
   INFERENCE_BRIDGE_HREF,
   isAbortError,
   prepareInference,
+  sameInferenceContent,
   setHostedConsent,
   type ChatStatus,
   type InferenceGate,
   type InferenceMessage,
 } from "./inference";
 import { encodeNpub, type Kind0Profile } from "./identity";
-import { njumpHref, profileLabel } from "./mentions";
+import { noteImageUrls } from "./media";
+import { profileLabel } from "./mentions";
 import { AskAiMarkdown } from "./AskAiMarkdown";
-import { encodeNevent } from "./nostr-clients";
 import {
   formatCreateAtDate,
   type LocatedEvent,
@@ -139,10 +141,13 @@ function settlePendingThread(noteId: string): string | undefined {
   return undefined;
 }
 
-function systemPrompt(canSearch: boolean): string {
+function systemPrompt(canSearch: boolean, hasImages: boolean): string {
   return [
     "You help someone read a public Nostr note from a trending feed.",
     "The reader can already see the note. There are no replies in this app, so do not summarize the text back to them.",
+    hasImages
+      ? "The first user message includes the note's images before the text. Look at those images when they matter."
+      : null,
     "On the first reply, explain and check:",
     "- What is this referring to, and who or what is involved?",
     canSearch
@@ -156,7 +161,9 @@ function systemPrompt(canSearch: boolean): string {
       : "You cannot search the web. Do not claim you searched. If a claim needs verification you cannot do, say so.",
     "Keep answers short. Light markdown is fine: bold, short lists, and links. Do not use headings or code fences.",
     "You are not the note's author. If you are unsure, say so. Invite a follow-up when it would help.",
-  ].join("\n");
+  ]
+    .filter((line): line is string => Boolean(line))
+    .join("\n");
 }
 
 function formatEngagement(stats?: NoteEngagement): string {
@@ -181,12 +188,6 @@ function buildNoteContext(
   stats?: NoteEngagement
 ): string {
   const npub = encodeNpub(note.pubkey);
-  let nevent = "";
-  try {
-    nevent = encodeNevent(note);
-  } catch {
-    /* ignore */
-  }
   const raw = note.content.trim() || "(no text — media-only note)";
   const truncated =
     raw.length > MAX_NOTE_CHARS
@@ -198,7 +199,6 @@ function buildNoteContext(
     `Author: ${authorName}${npub ? ` (${npub})` : ""}`,
     `Posted: ${formatCreateAtDate(note.created_at)}`,
     `Engagement: ${formatEngagement(stats)}`,
-    nevent ? `Link: ${njumpHref(nevent)}` : `Note id: ${note.id}`,
     "",
     "Note:",
     truncated,
@@ -210,17 +210,24 @@ function noteContextUserContent(
   authorName: string,
   stats: NoteEngagement | undefined,
   canSearch: boolean
-): string {
-  return `${buildNoteContext(note, authorName, stats)}\n\n${noteContextInstruction(canSearch)}`;
+): string | ContentPart[] {
+  const text = `${buildNoteContext(note, authorName, stats)}\n\n${noteContextInstruction(canSearch)}`;
+  const images = noteImageUrls(note.content, note.tags);
+  if (images.length === 0) return text;
+  // Images first, then the existing note-context text (Bridge / Gemini vision).
+  return [
+    ...images.map((url): ContentPart => ({ type: "image", url })),
+    { type: "text", text },
+  ];
 }
 
 function patchNoteContextHistory(
   history: InferenceMessage[],
-  content: string
+  content: string | ContentPart[]
 ): boolean {
   const context = history[1];
   if (history[0]?.role !== "system" || context?.role !== "user") return false;
-  if (context.content === content) return false;
+  if (sameInferenceContent(context.content, content)) return false;
   history[1] = { role: "user", content };
   return true;
 }
@@ -422,11 +429,12 @@ export function AskAiPanel({
       engagement,
       canSearch
     );
+    const hasImages = Array.isArray(contextContent);
 
     const current = getThread(noteId);
     if (current.history.length === 0) {
       current.history = [
-        { role: "system", content: systemPrompt(canSearch) },
+        { role: "system", content: systemPrompt(canSearch, hasImages) },
         { role: "user", content: contextContent },
       ];
     } else {

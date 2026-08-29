@@ -4,8 +4,10 @@ import {
   getFeatures,
   isInferenceAvailable,
   isInferenceError,
+  type ContentPart,
   type Inference,
   type InferenceRequest,
+  type Message,
 } from "ipa-tools";
 import {
   createHostedBackend,
@@ -14,10 +16,10 @@ import {
   setHostedConsent,
 } from "./hosted-backend";
 
-export type InferenceMessage = {
-  role: "system" | "user" | "assistant";
-  content: string;
-};
+export type InferenceMessage =
+  | { role: "system"; content: string }
+  | { role: "user"; content: string | ContentPart[] }
+  | { role: "assistant"; content: string };
 
 export type ChatStatus = "waiting" | "generating" | "thinking";
 
@@ -45,7 +47,7 @@ type StreamChunk = {
   type: string;
   content?: string;
   model?: string;
-  message?: { role?: string; content?: string | null };
+  message?: { role?: string; content?: string | ContentPart[] | null };
 };
 
 const hostedBackend = createHostedBackend();
@@ -151,6 +153,9 @@ export function describeInferenceError(error: unknown): string {
     if (/client_limit/i.test(message)) {
       return "This browser has used today's hosted inference allowance.";
     }
+    if (/provider_busy/i.test(message)) {
+      return "The hosted model is busy right now. Try again in a moment.";
+    }
     if (/rate_limited/i.test(message)) {
       return "Too many hosted requests. Wait a moment and try again.";
     }
@@ -178,6 +183,20 @@ function chunkModel(chunk: StreamChunk): string | undefined {
   return typeof legacy === "string" && legacy ? legacy : undefined;
 }
 
+function assistantTextContent(
+  content: string | ContentPart[] | null | undefined
+): string {
+  if (typeof content === "string") return content;
+  if (!Array.isArray(content)) return "";
+  const chunks: string[] = [];
+  for (const part of content) {
+    if (part && typeof part === "object" && part.type === "text") {
+      chunks.push(part.text);
+    }
+  }
+  return chunks.join("");
+}
+
 async function consumeChat(
   request: (payload: InferenceRequest) => AsyncIterable<unknown>,
   payload: InferenceRequest,
@@ -202,8 +221,8 @@ async function consumeChat(
       text += chunk.content ?? "";
       onDelta?.(text);
     } else if (chunk.type === "done") {
-      const content = chunk.message?.content;
-      if (typeof content === "string" && (content.length > 0 || !sawDelta)) {
+      const content = assistantTextContent(chunk.message?.content);
+      if (content.length > 0 || !sawDelta) {
         text = content;
       }
       model = chunkModel(chunk) ?? model;
@@ -214,13 +233,46 @@ async function consumeChat(
   return { content: text, model };
 }
 
-function experimentalWebSearchRequest(
+function messagesHaveImageParts(messages: InferenceMessage[]): boolean {
+  for (const message of messages) {
+    if (message.role !== "user") continue;
+    if (!Array.isArray(message.content)) continue;
+    if (message.content.some((part) => part?.type === "image")) return true;
+  }
+  return false;
+}
+
+function experimentalRequest(
   inference: InferenceWithExperimental
 ): Inference["request"] | undefined {
   const experimental = inference.experimental?.request;
   if (typeof experimental !== "function") return undefined;
-  if (inferenceFeatures().webSearch) return undefined;
   return experimental.bind(inference.experimental);
+}
+
+/** Prefer experimental when images or unadvertised web search need it. */
+function shouldUseExperimental(
+  inference: InferenceWithExperimental,
+  hasImages: boolean
+): boolean {
+  if (typeof inference.experimental?.request !== "function") return false;
+  if (hasImages) return true;
+  if (inferenceFeatures().webSearch) return false;
+  return true;
+}
+
+async function hostedOnlyRequest(
+  payload: InferenceRequest,
+  onStatus?: (status: ChatStatus) => void,
+  onDelta?: (text: string) => void
+): Promise<ChatResult> {
+  const session = await hostedBackend.create({ signal: payload.signal });
+  return consumeChat(
+    (req) => session.request(req),
+    payload,
+    onStatus,
+    onDelta
+  );
 }
 
 export async function completeChat(options: {
@@ -229,23 +281,37 @@ export async function completeChat(options: {
   onStatus?: (status: ChatStatus) => void;
   onDelta?: (text: string) => void;
 }): Promise<ChatResult> {
+  const messages = options.messages as Message[];
+  const hasImages = messagesHaveImageParts(options.messages);
   const inference = lookupInference();
-  const experimentalRequest = inference
-    ? experimentalWebSearchRequest(inference)
-    : undefined;
 
-  if (experimentalRequest) {
-    return consumeChat(
-      experimentalRequest,
-      {
-        method: "chat",
-        messages: options.messages,
-        tools: [WEB_SEARCH_TOOL],
-        signal: options.signal,
-      },
-      options.onStatus,
-      options.onDelta
-    );
+  const payload: InferenceRequest = {
+    method: "chat",
+    messages,
+    tools: [WEB_SEARCH_TOOL],
+    signal: options.signal,
+  };
+
+  if (inference && shouldUseExperimental(inference, hasImages)) {
+    const experimental = experimentalRequest(inference);
+    if (experimental) {
+      return consumeChat(
+        experimental,
+        payload,
+        options.onStatus,
+        options.onDelta
+      );
+    }
+  }
+
+  // Stable IPA rejects ImageParts. Prefer hosted when consented; otherwise
+  // strip images so text chat still works (URLs remain in the note text).
+  let requestMessages = messages;
+  if (hasImages && inference && !shouldUseExperimental(inference, hasImages)) {
+    if (hasHostedConsent()) {
+      return hostedOnlyRequest(payload, options.onStatus, options.onDelta);
+    }
+    requestMessages = stripImageParts(messages);
   }
 
   const tools = inferenceFeatures().webSearch
@@ -253,14 +319,42 @@ export async function completeChat(options: {
     : undefined;
 
   return consumeChat(
-    (payload) => inferenceClient.request(payload),
+    (req) => inferenceClient.request(req),
     {
       method: "chat",
-      messages: options.messages,
+      messages: requestMessages,
       ...(tools ? { tools } : {}),
       signal: options.signal,
     },
     options.onStatus,
     options.onDelta
   );
+}
+
+function stripImageParts(messages: Message[]): Message[] {
+  return messages.map((message) => {
+    if (message.role !== "user" && message.role !== "assistant") return message;
+    if (!Array.isArray(message.content)) return message;
+    const text = message.content
+      .filter(
+        (part): part is Extract<ContentPart, { type: "text" }> =>
+          part.type === "text"
+      )
+      .map((part) => part.text)
+      .join("\n\n");
+    if (message.role === "assistant") {
+      return { ...message, content: text };
+    }
+    return { role: "user", content: text };
+  });
+}
+
+export function sameInferenceContent(
+  a: string | ContentPart[],
+  b: string | ContentPart[]
+): boolean {
+  if (a === b) return true;
+  if (typeof a === "string" || typeof b === "string") return a === b;
+  if (a.length !== b.length) return false;
+  return JSON.stringify(a) === JSON.stringify(b);
 }
