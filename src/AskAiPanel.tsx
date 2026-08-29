@@ -22,6 +22,7 @@ import {
   type InferenceGate,
   type InferenceMessage,
 } from "./inference";
+import { useWebSearchEnabled } from "./settings";
 import { encodeNpub, type Kind0Profile } from "./identity";
 import { noteImageUrls } from "./media";
 import { profileLabel } from "./mentions";
@@ -324,6 +325,8 @@ export function AskAiPanel({
   const busy = thread.visible.some(
     (message) => message.role === "assistant" && message.pending
   );
+  const webSearchEnabled = useWebSearchEnabled();
+  const maySearchWeb = canSearchWeb();
 
   function persist(noteId: string, next: Thread) {
     threads.set(noteId, next);
@@ -629,7 +632,7 @@ export function AskAiPanel({
     if (restartingIntro) {
       void runTurnRef.current(null);
     }
-  }, [note, authorName, engagement]);
+  }, [note, authorName, engagement, webSearchEnabled]);
 
   function handleSubmit(event: FormEvent) {
     event.preventDefault();
@@ -686,9 +689,7 @@ export function AskAiPanel({
           <div className="ask-ai-heading">
             <h2 id={titleId}>
               Ask AI
-              {canSearchWeb() || gate === "hosted" || gate === "consent" ? (
-                <span>May search the web</span>
-              ) : null}
+              {maySearchWeb ? <span>May search the web</span> : null}
             </h2>
             <p className="ask-ai-about">
               About {authorName}
