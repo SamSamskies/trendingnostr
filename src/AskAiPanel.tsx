@@ -224,11 +224,17 @@ function noteContextUserContent(
 
 function patchNoteContextHistory(
   history: InferenceMessage[],
-  content: string | ContentPart[]
+  content: string | ContentPart[],
+  canSearch: boolean
 ): boolean {
+  const system = history[0];
   const context = history[1];
-  if (history[0]?.role !== "system" || context?.role !== "user") return false;
-  if (sameInferenceContent(context.content, content)) return false;
+  if (system?.role !== "system" || context?.role !== "user") return false;
+  const nextSystem = systemPrompt(canSearch, Array.isArray(content));
+  const contentSame = sameInferenceContent(context.content, content);
+  const systemSame = system.content === nextSystem;
+  if (contentSame && systemSame) return false;
+  history[0] = { role: "system", content: nextSystem };
   history[1] = { role: "user", content };
   return true;
 }
@@ -441,7 +447,7 @@ export function AskAiPanel({
         { role: "user", content: contextContent },
       ];
     } else {
-      patchNoteContextHistory(current.history, contextContent);
+      patchNoteContextHistory(current.history, contextContent, canSearch);
     }
 
     let userVisibleId: string | undefined;
@@ -604,13 +610,14 @@ export function AskAiPanel({
 
   useEffect(() => {
     const current = getThread(note.id);
+    const canSearch = canSearchWeb();
     const nextContent = noteContextUserContent(
       note,
       authorName,
       engagement,
-      canSearchWeb()
+      canSearch
     );
-    if (!patchNoteContextHistory(current.history, nextContent)) return;
+    if (!patchNoteContextHistory(current.history, nextContent, canSearch)) return;
 
     const restartingIntro =
       !current.visible.some((message) => message.role === "user") &&
