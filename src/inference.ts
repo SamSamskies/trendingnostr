@@ -244,6 +244,41 @@ function messagesHaveImageParts(messages: InferenceMessage[]): boolean {
   return false;
 }
 
+/** Hosts used by https://wsrv.nl/ (and its images.weserv.nl alias). */
+const WSRV_HOSTS = new Set(["wsrv.nl", "images.weserv.nl"]);
+
+/**
+ * IPA extensions fetch image URLs from the page origin, so Blossom/CDN hosts
+ * without CORS break Ask AI. Route through wsrv.nl (CORS *) for the extension path.
+ */
+export function proxyImageUrlForIpa(url: string): string {
+  try {
+    const parsed = new URL(url);
+    if (parsed.protocol !== "http:" && parsed.protocol !== "https:") return url;
+    if (WSRV_HOSTS.has(parsed.hostname.toLowerCase())) return url;
+    return `https://wsrv.nl/?url=${encodeURIComponent(url)}`;
+  } catch {
+    return url;
+  }
+}
+
+function withIpaProxiedImageUrls(messages: Message[]): Message[] {
+  return messages.map((message) => {
+    if (message.role !== "user" || !Array.isArray(message.content)) {
+      return message;
+    }
+    return {
+      ...message,
+      content: message.content.map((part) => {
+        if (part?.type !== "image" || !("url" in part) || typeof part.url !== "string") {
+          return part;
+        }
+        return { type: "image" as const, url: proxyImageUrlForIpa(part.url) };
+      }),
+    };
+  });
+}
+
 function experimentalRequest(
   inference: InferenceWithExperimental
 ): Inference["request"] | undefined {
@@ -303,7 +338,9 @@ export async function completeChat(options: {
     if (experimental) {
       return consumeChat(
         experimental,
-        payload,
+        hasImages
+          ? { ...payload, messages: withIpaProxiedImageUrls(messages) }
+          : payload,
         options.onStatus,
         options.onDelta
       );
