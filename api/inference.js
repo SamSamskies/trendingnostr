@@ -491,10 +491,14 @@ export default async function handler(req, res) {
     generationConfig.temperature = options.temperature;
   }
 
+  // Client may omit web search to avoid Google Search grounding cost.
+  const useWebSearch = body.webSearch !== false;
   const geminiBody = {
     contents: prompt.contents,
-    tools: [{ googleSearch: {} }],
   };
+  if (useWebSearch) {
+    geminiBody.tools = [{ googleSearch: {} }];
+  }
   if (prompt.system) {
     geminiBody.systemInstruction = {
       parts: [{ text: prompt.system }],

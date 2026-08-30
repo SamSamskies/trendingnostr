@@ -22,6 +22,7 @@ import {
   type InferenceGate,
   type InferenceMessage,
 } from "./inference";
+import { useWebSearchEnabled } from "./settings";
 import { encodeNpub, type Kind0Profile } from "./identity";
 import { noteImageUrls } from "./media";
 import { profileLabel } from "./mentions";
@@ -223,11 +224,17 @@ function noteContextUserContent(
 
 function patchNoteContextHistory(
   history: InferenceMessage[],
-  content: string | ContentPart[]
+  content: string | ContentPart[],
+  canSearch: boolean
 ): boolean {
+  const system = history[0];
   const context = history[1];
-  if (history[0]?.role !== "system" || context?.role !== "user") return false;
-  if (sameInferenceContent(context.content, content)) return false;
+  if (system?.role !== "system" || context?.role !== "user") return false;
+  const nextSystem = systemPrompt(canSearch, Array.isArray(content));
+  const contentSame = sameInferenceContent(context.content, content);
+  const systemSame = system.content === nextSystem;
+  if (contentSame && systemSame) return false;
+  history[0] = { role: "system", content: nextSystem };
   history[1] = { role: "user", content };
   return true;
 }
@@ -324,6 +331,8 @@ export function AskAiPanel({
   const busy = thread.visible.some(
     (message) => message.role === "assistant" && message.pending
   );
+  const webSearchEnabled = useWebSearchEnabled();
+  const maySearchWeb = canSearchWeb();
 
   function persist(noteId: string, next: Thread) {
     threads.set(noteId, next);
@@ -438,7 +447,7 @@ export function AskAiPanel({
         { role: "user", content: contextContent },
       ];
     } else {
-      patchNoteContextHistory(current.history, contextContent);
+      patchNoteContextHistory(current.history, contextContent, canSearch);
     }
 
     let userVisibleId: string | undefined;
@@ -601,13 +610,14 @@ export function AskAiPanel({
 
   useEffect(() => {
     const current = getThread(note.id);
+    const canSearch = canSearchWeb();
     const nextContent = noteContextUserContent(
       note,
       authorName,
       engagement,
-      canSearchWeb()
+      canSearch
     );
-    if (!patchNoteContextHistory(current.history, nextContent)) return;
+    if (!patchNoteContextHistory(current.history, nextContent, canSearch)) return;
 
     const restartingIntro =
       !current.visible.some((message) => message.role === "user") &&
@@ -629,7 +639,7 @@ export function AskAiPanel({
     if (restartingIntro) {
       void runTurnRef.current(null);
     }
-  }, [note, authorName, engagement]);
+  }, [note, authorName, engagement, webSearchEnabled]);
 
   function handleSubmit(event: FormEvent) {
     event.preventDefault();
@@ -686,9 +696,7 @@ export function AskAiPanel({
           <div className="ask-ai-heading">
             <h2 id={titleId}>
               Ask AI
-              {canSearchWeb() || gate === "hosted" || gate === "consent" ? (
-                <span>May search the web</span>
-              ) : null}
+              {maySearchWeb ? <span>May search the web</span> : null}
             </h2>
             <p className="ask-ai-about">
               About {authorName}

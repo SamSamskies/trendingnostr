@@ -15,6 +15,7 @@ import {
   HOSTED_BACKEND_ID,
   setHostedConsent,
 } from "./hosted-backend";
+import { isWebSearchEnabled } from "./settings";
 
 export type InferenceMessage =
   | { role: "system"; content: string }
@@ -101,6 +102,7 @@ function inferenceFeatures() {
 }
 
 export function canSearchWeb(): boolean {
+  if (!isWebSearchEnabled()) return false;
   if (isInferenceAvailable()) {
     if (inferenceFeatures().webSearch) return true;
     return typeof lookupInference()?.experimental?.request === "function";
@@ -253,10 +255,12 @@ function experimentalRequest(
 /** Prefer experimental when images or unadvertised web search need it. */
 function shouldUseExperimental(
   inference: InferenceWithExperimental,
-  hasImages: boolean
+  hasImages: boolean,
+  wantSearch: boolean
 ): boolean {
   if (typeof inference.experimental?.request !== "function") return false;
   if (hasImages) return true;
+  if (!wantSearch) return false;
   if (inferenceFeatures().webSearch) return false;
   return true;
 }
@@ -284,15 +288,17 @@ export async function completeChat(options: {
   const messages = options.messages as Message[];
   const hasImages = messagesHaveImageParts(options.messages);
   const inference = lookupInference();
+  const wantSearch = canSearchWeb();
+  const tools = wantSearch ? [WEB_SEARCH_TOOL] : undefined;
 
   const payload: InferenceRequest = {
     method: "chat",
     messages,
-    tools: [WEB_SEARCH_TOOL],
+    ...(tools ? { tools } : {}),
     signal: options.signal,
   };
 
-  if (inference && shouldUseExperimental(inference, hasImages)) {
+  if (inference && shouldUseExperimental(inference, hasImages, wantSearch)) {
     const experimental = experimentalRequest(inference);
     if (experimental) {
       return consumeChat(
@@ -307,23 +313,23 @@ export async function completeChat(options: {
   // Stable IPA rejects ImageParts. Prefer hosted when consented; otherwise
   // strip images so text chat still works (URLs remain in the note text).
   let requestMessages = messages;
-  if (hasImages && inference && !shouldUseExperimental(inference, hasImages)) {
+  if (
+    hasImages &&
+    inference &&
+    !shouldUseExperimental(inference, hasImages, wantSearch)
+  ) {
     if (hasHostedConsent()) {
       return hostedOnlyRequest(payload, options.onStatus, options.onDelta);
     }
     requestMessages = stripImageParts(messages);
   }
 
-  const tools = inferenceFeatures().webSearch
-    ? [WEB_SEARCH_TOOL]
-    : undefined;
-
   return consumeChat(
     (req) => inferenceClient.request(req),
     {
       method: "chat",
       messages: requestMessages,
-      ...(tools ? { tools } : {}),
+      ...(wantSearch && inferenceFeatures().webSearch ? { tools } : {}),
       signal: options.signal,
     },
     options.onStatus,

@@ -7,6 +7,7 @@ import {
   OpenInDialog,
   type OpenInTarget,
 } from "./OpenInDialog";
+import { SettingsDialog } from "./SettingsDialog";
 import {
   addIdentities,
   collectMentionIdentities,
@@ -260,6 +261,7 @@ export default function App() {
   const [reloadToken, setReloadToken] = useState(0);
   const [openTarget, setOpenTarget] = useState<OpenInTarget | null>(null);
   const [askNote, setAskNote] = useState<LocatedEvent | null>(null);
+  const [settingsOpen, setSettingsOpen] = useState(false);
   const askAiRef = useRef<AskAiPanelHandle>(null);
   const sentinelRef = useRef<HTMLDivElement>(null);
 
@@ -369,21 +371,37 @@ export default function App() {
     <main className="page">
       <header className="hero">
         <h1>Trending Nostr</h1>
-        <a
-          className="hero-github"
-          href="https://github.com/SamSamskies/trendingnostr"
-          target="_blank"
-          rel="noreferrer"
-          aria-label="View source on GitHub"
-          title="View source on GitHub"
-        >
-          <svg viewBox="0 0 16 16" aria-hidden="true">
-            <path
-              fill="currentColor"
-              d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27s1.36.09 2 .27c1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0 0 16 8c0-4.42-3.58-8-8-8"
-            />
-          </svg>
-        </a>
+        <div className="hero-actions">
+          <button
+            type="button"
+            className="hero-action"
+            aria-label="Settings"
+            title="Settings"
+            onClick={() => setSettingsOpen(true)}
+          >
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path
+                fill="currentColor"
+                d="M19.14 12.94c.04-.31.06-.63.06-.94s-.02-.63-.06-.94l2.03-1.58a.49.49 0 0 0 .12-.61l-1.92-3.32a.49.49 0 0 0-.59-.22l-2.39.96a7.07 7.07 0 0 0-1.63-.94l-.36-2.54a.48.48 0 0 0-.48-.41h-3.84a.48.48 0 0 0-.48.41l-.36 2.54c-.59.24-1.13.55-1.63.94l-2.39-.96a.49.49 0 0 0-.59.22L2.77 8.87a.48.48 0 0 0 .12.61l2.03 1.58c-.04.31-.06.63-.06.94s.02.63.06.94L2.89 14.5a.49.49 0 0 0-.12.61l1.92 3.32c.12.22.39.3.59.22l2.39-.96c.5.39 1.04.7 1.63.94l.36 2.54c.05.24.24.41.48.41h3.84c.24 0 .44-.17.48-.41l.36-2.54c.59-.24 1.13-.55 1.63-.94l2.39.96c.22.08.47 0 .59-.22l1.92-3.32a.49.49 0 0 0-.12-.61l-2.03-1.58ZM12 15.6A3.6 3.6 0 1 1 12 8.4a3.6 3.6 0 0 1 0 7.2Z"
+              />
+            </svg>
+          </button>
+          <a
+            className="hero-action"
+            href="https://github.com/SamSamskies/trendingnostr"
+            target="_blank"
+            rel="noreferrer"
+            aria-label="View source on GitHub"
+            title="View source on GitHub"
+          >
+            <svg viewBox="0 0 16 16" aria-hidden="true">
+              <path
+                fill="currentColor"
+                d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27s1.36.09 2 .27c1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0 0 16 8c0-4.42-3.58-8-8-8"
+              />
+            </svg>
+          </a>
+        </div>
       </header>
 
       {loading ? (
@@ -483,6 +501,10 @@ export default function App() {
           </ol>
           <div ref={sentinelRef} className="sentinel" aria-hidden="true" />
         </>
+      ) : null}
+
+      {settingsOpen ? (
+        <SettingsDialog onClose={() => setSettingsOpen(false)} />
       ) : null}
 
       {openTarget ? (
