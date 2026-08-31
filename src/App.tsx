@@ -455,9 +455,12 @@ export default function App() {
         </>
       ) : null}
 
-      {!loading && error ? (
+      {!loading && (error || visibleEvents.length === 0) ? (
         <div className="status status-error" role="status">
-          <p>{error}</p>
+          <p>
+            {error ??
+              "No trending notes right now. Try again in a moment."}
+          </p>
           <button
             type="button"
             className="status-retry"
@@ -468,7 +471,7 @@ export default function App() {
         </div>
       ) : null}
 
-      {!loading && visibleEvents.length > 0 ? (
+      {!loading && !error && visibleEvents.length > 0 ? (
         <>
           <ol className="results">
             {visibleEvents.map((note) => {
