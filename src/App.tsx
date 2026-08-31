@@ -35,6 +35,11 @@ import {
   type LocatedEvent,
   type NoteEngagement,
 } from "./nostr";
+import {
+  setTrendingHours,
+  TRENDING_HOURS_OPTIONS,
+  useTrendingHours,
+} from "./settings";
 
 const SKELETON_LINE_COUNTS = [3, 2, 4, 2, 3] as const;
 
@@ -263,6 +268,7 @@ function NoteAuthor({
 }
 
 export default function App() {
+  const trendingHours = useTrendingHours();
   const [events, setEvents] = useState<LocatedEvent[]>([]);
   const [engagementById, setEngagementById] = useState<
     Record<string, NoteEngagement>
@@ -289,7 +295,7 @@ export default function App() {
       setEngagementById({});
 
       try {
-        const feed = await fetchTrendingFeed();
+        const feed = await fetchTrendingFeed(trendingHours);
         if (cancelled) return;
         // Seed cached kind 0 so known nostrmag.com authors drop before paint.
         const cached = readCachedKind0Profiles(
@@ -323,7 +329,7 @@ export default function App() {
     return () => {
       cancelled = true;
     };
-  }, [reloadToken]);
+  }, [reloadToken, trendingHours]);
 
   const displayEvents = useMemo(
     () => filterBlockedNip05Authors(events, profiles),
@@ -441,6 +447,24 @@ export default function App() {
           </a>
         </div>
       </header>
+
+      <div
+        className="feed-windows"
+        role="group"
+        aria-label="Trending time window"
+      >
+        {TRENDING_HOURS_OPTIONS.map((hours) => (
+          <button
+            key={hours}
+            type="button"
+            className="feed-window"
+            aria-pressed={trendingHours === hours}
+            onClick={() => setTrendingHours(hours)}
+          >
+            {hours}h
+          </button>
+        ))}
+      </div>
 
       {loading ? (
         <>

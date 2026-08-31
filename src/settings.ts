@@ -2,17 +2,31 @@ import { useSyncExternalStore } from "react";
 
 const SETTINGS_KEY = "trendingnostr.settings";
 
+/** Wine trending windows offered in the UI (API allows 1–48). */
+export const TRENDING_HOURS_OPTIONS = [4, 24, 48] as const;
+export type TrendingHours = (typeof TRENDING_HOURS_OPTIONS)[number];
+
 export type AppSettings = {
   /** When false, Ask AI skips web search (IPA tools and hosted grounding). */
   webSearch: boolean;
+  /** Last selected trending window; restored on next visit. */
+  trendingHours: TrendingHours;
 };
 
 const DEFAULT_SETTINGS: AppSettings = {
   webSearch: true,
+  trendingHours: 48,
 };
 
 let cache: AppSettings | null = null;
 const listeners = new Set<() => void>();
+
+function isTrendingHours(value: unknown): value is TrendingHours {
+  return (
+    typeof value === "number" &&
+    (TRENDING_HOURS_OPTIONS as readonly number[]).includes(value)
+  );
+}
 
 function normalize(raw: unknown): AppSettings {
   if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
@@ -24,6 +38,9 @@ function normalize(raw: unknown): AppSettings {
       typeof record.webSearch === "boolean"
         ? record.webSearch
         : DEFAULT_SETTINGS.webSearch,
+    trendingHours: isTrendingHours(record.trendingHours)
+      ? record.trendingHours
+      : DEFAULT_SETTINGS.trendingHours,
   };
 }
 
@@ -81,5 +98,23 @@ export function useWebSearchEnabled(): boolean {
     subscribe,
     isWebSearchEnabled,
     () => DEFAULT_SETTINGS.webSearch
+  );
+}
+
+export function getTrendingHours(): TrendingHours {
+  return readSettings().trendingHours;
+}
+
+export function setTrendingHours(hours: TrendingHours): void {
+  const current = readSettings();
+  if (current.trendingHours === hours) return;
+  writeSettings({ ...current, trendingHours: hours });
+}
+
+export function useTrendingHours(): TrendingHours {
+  return useSyncExternalStore(
+    subscribe,
+    getTrendingHours,
+    () => DEFAULT_SETTINGS.trendingHours
   );
 }

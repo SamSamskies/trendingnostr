@@ -109,6 +109,48 @@ a.hero-action {
   height: 1.35rem;
 }
 
+.feed-windows {
+  display: inline-flex;
+  gap: 0.15rem;
+  margin: 0 0 1.35rem;
+  padding: 0.2rem;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--panel) 82%, transparent);
+}
+
+.feed-window {
+  min-width: 3rem;
+  margin: 0;
+  padding: 0.4rem 0.7rem;
+  border: none;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--muted);
+  font-family: var(--font-body);
+  font-size: 0.82rem;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  cursor: pointer;
+  transition:
+    color 0.15s ease,
+    background 0.15s ease;
+}
+
+.feed-window:hover {
+  color: var(--ink);
+}
+
+.feed-window[aria-pressed="true"] {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+.feed-window:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
 .settings-dialog {
   width: min(22rem, calc(100vw - 2rem));
   max-height: min(36rem, calc(100vh - 2rem));
