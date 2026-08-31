@@ -45,6 +45,15 @@ const HIDDEN_AUTHOR_PUBKEYS = new Set([
   "d71f47ad20f6a4b9363d8a319a539332e77980f8d52dee9a0073da36c4062369",
 ]);
 
+/**
+ * NIP-56 (kind 1984) spam reports from this pubkey hide matching notes.
+ * Lowercase hex.
+ */
+const SPAM_REPORTER_PUBKEY =
+  "604e96e099936a104883958b040b47672e0f048c98ac793f37ffe4c720279eb2";
+/** Per-relay cap when fetching kind-1984 spam reports for feed note ids. */
+const SPAM_REPORT_QUERY_LIMIT = 200;
+
 export const RELAY_MAX_WAIT_MS = 4500;
 /** How many times to retry a failed trending-relay connection. */
 export const TRENDING_FETCH_ATTEMPTS = 3;
@@ -404,6 +413,70 @@ async function enrichEngagementFromRelays(
   }
 }
 
+/** NIP-56: report type is the 3rd tag entry; some clients put a relay URL before it. */
+function spamReportedEventIdFromETag(tag: string[]): string | null {
+  if (tag[0] !== "e" || !isEventId(tag[1])) return null;
+  if (!tag.slice(2).includes("spam")) return null;
+  return tag[1].toLowerCase();
+}
+
+/**
+ * Event ids the spam reporter marked kind-1984 `spam` among `noteIds`.
+ * Soft-fails to an empty set if relays error.
+ */
+async function fetchSpamReportedEventIds(
+  noteIds: string[]
+): Promise<Set<string>> {
+  const wanted = [
+    ...new Set(
+      noteIds.map((id) => id.toLowerCase()).filter((id) => isEventId(id))
+    ),
+  ];
+  if (wanted.length === 0) return new Set();
+
+  const wantedSet = new Set(wanted);
+  const spamIds = new Set<string>();
+  const pool = new SimplePool();
+  pool.maxWaitForConnection = RELAY_MAX_WAIT_MS;
+
+  try {
+    for (const chunk of chunkArray(wanted, ENGAGEMENT_ID_CHUNK_SIZE)) {
+      const settled = await Promise.allSettled(
+        ENGAGEMENT_RELAYS.map((relay) =>
+          pool.querySync(
+            [relay],
+            {
+              kinds: [1984],
+              authors: [SPAM_REPORTER_PUBKEY],
+              "#e": chunk,
+              limit: SPAM_REPORT_QUERY_LIMIT,
+            },
+            { maxWait: RELAY_MAX_WAIT_MS }
+          )
+        )
+      );
+
+      for (const result of settled) {
+        if (result.status !== "fulfilled") continue;
+        for (const event of result.value) {
+          if (event.kind !== 1984) continue;
+          if (event.pubkey.toLowerCase() !== SPAM_REPORTER_PUBKEY) continue;
+          for (const tag of event.tags) {
+            const id = spamReportedEventIdFromETag(tag);
+            if (id && wantedSet.has(id)) spamIds.add(id);
+          }
+        }
+      }
+    }
+  } catch {
+    return new Set();
+  } finally {
+    pool.destroy();
+  }
+
+  return spamIds;
+}
+
 export const formatCreateAtDate = (unixTimestamp: number) => {
   const date = new Date(unixTimestamp * 1000);
   const formattedDate = date.toLocaleDateString([], {
@@ -503,9 +576,16 @@ async function toTrendingFeed(
   notes: LocatedEvent[],
   engagementById: Record<string, NoteEngagement>
 ): Promise<TrendingFeed> {
-  const engagement = await enrichEngagementFromRelays(notes, engagementById);
+  const [engagement, spamIds] = await Promise.all([
+    enrichEngagementFromRelays(notes, engagementById),
+    fetchSpamReportedEventIds(notes.map((note) => note.id)),
+  ]);
+  const visible =
+    spamIds.size === 0
+      ? notes
+      : notes.filter((note) => !spamIds.has(note.id.toLowerCase()));
   return {
-    notes: rankTrendingNotes(notes, engagement),
+    notes: rankTrendingNotes(visible, engagement),
     engagementById: engagement,
   };
 }
