@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { NoteBody } from "./NoteBody";
 import { NoteContent } from "./NoteContent";
 import { Avatar } from "./Avatar";
@@ -15,7 +15,11 @@ import {
   njumpHref,
   profileLabel,
 } from "./mentions";
-import { encodeNpub, type Kind0Profile } from "./identity";
+import {
+  encodeNpub,
+  isBlockedAuthorProfile,
+  type Kind0Profile,
+} from "./identity";
 import { encodeNevent } from "./nostr-clients";
 import {
   AskAiButton,
@@ -33,6 +37,15 @@ import {
 } from "./nostr";
 
 const SKELETON_LINE_COUNTS = [3, 2, 4, 2, 3] as const;
+
+function filterBlockedNip05Authors(
+  notes: LocatedEvent[],
+  profiles: Record<string, Kind0Profile>
+): LocatedEvent[] {
+  return notes.filter(
+    (note) => !isBlockedAuthorProfile(profiles[note.pubkey.toLowerCase()])
+  );
+}
 
 /** Compact counts for engagement labels (e.g. 1.2k, 3.4M). */
 function formatEngagementCount(value: number): string {
@@ -278,6 +291,13 @@ export default function App() {
       try {
         const feed = await fetchTrendingFeed();
         if (cancelled) return;
+        // Seed cached kind 0 so known nostrmag.com authors drop before paint.
+        const cached = readCachedKind0Profiles(
+          feed.notes.map((note) => note.pubkey)
+        );
+        if (Object.keys(cached).length > 0) {
+          setProfiles((prev) => ({ ...prev, ...cached }));
+        }
         setEvents(feed.notes);
         setEngagementById(feed.engagementById);
         setCurrentDataLength(Math.min(WINDOW_PAGE_SIZE, feed.notes.length));
@@ -305,23 +325,41 @@ export default function App() {
     };
   }, [reloadToken]);
 
+  const displayEvents = useMemo(
+    () => filterBlockedNip05Authors(events, profiles),
+    [events, profiles]
+  );
+
+  // After profiles arrive and spam authors drop out, clamp the window and
+  // top up the first page so the feed does not look sparsely loaded.
+  useEffect(() => {
+    setCurrentDataLength((prev) => {
+      if (displayEvents.length === 0) return 0;
+      const capped = Math.min(prev, displayEvents.length);
+      if (capped < WINDOW_PAGE_SIZE) {
+        return Math.min(WINDOW_PAGE_SIZE, displayEvents.length);
+      }
+      return capped;
+    });
+  }, [displayEvents.length]);
+
   useEffect(() => {
     const sentinel = sentinelRef.current;
-    if (!sentinel || currentDataLength >= events.length) return;
+    if (!sentinel || currentDataLength >= displayEvents.length) return;
 
     const observer = new IntersectionObserver((entries) => {
       if (!entries[0]?.isIntersecting) return;
       setCurrentDataLength((prev) =>
-        prev + WINDOW_PAGE_SIZE < events.length
+        prev + WINDOW_PAGE_SIZE < displayEvents.length
           ? prev + WINDOW_PAGE_SIZE
-          : events.length
+          : displayEvents.length
       );
     });
     observer.observe(sentinel);
     return () => observer.disconnect();
-  }, [currentDataLength, events.length]);
+  }, [currentDataLength, displayEvents.length]);
 
-  const visibleEvents = events.slice(0, currentDataLength);
+  const visibleEvents = displayEvents.slice(0, currentDataLength);
 
   // Prefetch authors + mentions for the full feed so scrolled-in notes already
   // have names/avatars (cache paints instantly; relays fill gaps in the background).
@@ -417,9 +455,12 @@ export default function App() {
         </>
       ) : null}
 
-      {!loading && error ? (
+      {!loading && (error || visibleEvents.length === 0) ? (
         <div className="status status-error" role="status">
-          <p>{error}</p>
+          <p>
+            {error ??
+              "No trending notes right now. Try again in a moment."}
+          </p>
           <button
             type="button"
             className="status-retry"
@@ -430,7 +471,7 @@ export default function App() {
         </div>
       ) : null}
 
-      {!loading && visibleEvents.length > 0 ? (
+      {!loading && !error && visibleEvents.length > 0 ? (
         <>
           <ol className="results">
             {visibleEvents.map((note) => {
