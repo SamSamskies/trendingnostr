@@ -76,6 +76,38 @@ export function parseKind0Profile(event: Event): Kind0Profile {
   return parseProfileContent(event.content);
 }
 
+/** Nip-05 hosts whose authors are hidden from the trending feed. */
+const BLOCKED_NIP05_HOSTS = new Set(["nostrmag.com"]);
+
+/** Hostname from `name@domain` (lowercased), or null if missing/malformed. */
+export function nip05Hostname(nip05: string | undefined): string | null {
+  if (!nip05) return null;
+  const at = nip05.lastIndexOf("@");
+  if (at < 0 || at === nip05.length - 1) return null;
+  const host = nip05
+    .slice(at + 1)
+    .trim()
+    .toLowerCase()
+    .replace(/\.$/, "");
+  return host || null;
+}
+
+/** True when nip-05 is on a blocked host (including subdomains). */
+export function isBlockedNip05(nip05: string | undefined): boolean {
+  const host = nip05Hostname(nip05);
+  if (!host) return false;
+  for (const blocked of BLOCKED_NIP05_HOSTS) {
+    if (host === blocked || host.endsWith(`.${blocked}`)) return true;
+  }
+  return false;
+}
+
+export function isBlockedAuthorProfile(
+  profile: Kind0Profile | undefined
+): boolean {
+  return isBlockedNip05(profile?.nip05);
+}
+
 export function encodeNpub(pubkey: string): string {
   try {
     return nip19.npubEncode(pubkey);

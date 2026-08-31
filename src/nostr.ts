@@ -28,6 +28,14 @@ export const PROFILE_RELAYS = [
   "wss://purplepag.es",
 ] as const;
 
+/** Same relays as event hydration — used to count engagement when wine lacks a note. */
+export const ENGAGEMENT_RELAYS = EVENT_HYDRATION_RELAYS;
+/** Caps relay backfill latency (chunked `#e` queries). */
+export const ENGAGEMENT_BACKFILL_MAX = 40;
+export const ENGAGEMENT_ID_CHUNK_SIZE = 40;
+/** Per-relay cap so kind-1 reply floods cannot stall EOSE. */
+export const ENGAGEMENT_QUERY_LIMIT = 400;
+
 /** Authors hidden from the trending feed (lowercase hex pubkeys). */
 const HIDDEN_AUTHOR_PUBKEYS = new Set([
   "d71f47ad20f6a4b9363d8a319a539332e77980f8d52dee9a0073da36c4062369",
@@ -205,6 +213,165 @@ async function hydrateTrendingNotesFromWine(
   return toLocatedEvents(ordered, EVENT_HYDRATION_RELAYS);
 }
 
+function emptyEngagement(): NoteEngagement {
+  return { reactions: 0, replies: 0, reposts: 0, zapAmount: 0 };
+}
+
+/**
+ * Minimal BOLT11 amount parse for zap receipts (lnbc… only). Mirrors
+ * nostr-tools nip57 getSatoshisAmountFromBolt11 without the typed export.
+ */
+function satsFromBolt11(bolt11: string): number {
+  if (bolt11.length < 50 || !bolt11.startsWith("lnbc")) return 0;
+  const prefix = bolt11.slice(0, 50);
+  const sep = prefix.lastIndexOf("1");
+  if (sep < 4) return 0;
+  const amount = prefix.slice(4, sep);
+  if (!amount) return 0;
+
+  const multipliers: Record<string, number> = {
+    m: 1e5,
+    u: 1e2,
+    n: 0.1,
+    p: 0.0001,
+  };
+  const last = amount[amount.length - 1]!;
+  if (last in multipliers) {
+    const n = Number(amount.slice(0, -1));
+    if (!Number.isFinite(n) || n < 0) return 0;
+    return Math.floor(n * multipliers[last]!);
+  }
+  const n = Number(amount);
+  if (!Number.isFinite(n) || n < 0) return 0;
+  return Math.floor(n * 1e8);
+}
+
+function zapSatsFromReceipt(event: Event): number {
+  const bolt11 = event.tags.find((tag) => tag[0] === "bolt11")?.[1];
+  if (!bolt11) return 0;
+  try {
+    return Math.max(0, satsFromBolt11(bolt11));
+  } catch {
+    return 0;
+  }
+}
+
+/** Note ids from `e` tags that are in the wanted set (lowercase). */
+function taggedWantedIds(event: Event, wanted: Set<string>): string[] {
+  const hits: string[] = [];
+  const seen = new Set<string>();
+  for (const tag of event.tags) {
+    if (tag[0] !== "e" || !isEventId(tag[1])) continue;
+    const id = tag[1].toLowerCase();
+    if (!wanted.has(id) || seen.has(id)) continue;
+    seen.add(id);
+    hits.push(id);
+  }
+  return hits;
+}
+
+/**
+ * Count reactions / replies / reposts / zap sats for note ids by querying
+ * public relays for events that `#e`-tag them. Incomplete vs wine (relay
+ * views only) but enough to rank notes wine never returned.
+ */
+async function fetchRelayEngagement(
+  noteIds: string[]
+): Promise<Record<string, NoteEngagement>> {
+  const wanted = [
+    ...new Set(
+      noteIds.map((id) => id.toLowerCase()).filter((id) => isEventId(id))
+    ),
+  ];
+  if (wanted.length === 0) return {};
+
+  const wantedSet = new Set(wanted);
+  const byId: Record<string, NoteEngagement> = {};
+  for (const id of wanted) byId[id] = emptyEngagement();
+
+  const seenEventIds = new Set<string>();
+  const pool = new SimplePool();
+  pool.maxWaitForConnection = RELAY_MAX_WAIT_MS;
+
+  try {
+    for (const chunk of chunkArray(wanted, ENGAGEMENT_ID_CHUNK_SIZE)) {
+      const settled = await Promise.allSettled(
+        ENGAGEMENT_RELAYS.map((relay) =>
+          pool.querySync(
+            [relay],
+            {
+              kinds: [1, 6, 7, 16, 9735],
+              "#e": chunk,
+              limit: ENGAGEMENT_QUERY_LIMIT,
+            },
+            { maxWait: RELAY_MAX_WAIT_MS }
+          )
+        )
+      );
+
+      for (const result of settled) {
+        if (result.status !== "fulfilled") continue;
+        for (const event of result.value) {
+          if (seenEventIds.has(event.id)) continue;
+          seenEventIds.add(event.id);
+
+          for (const target of taggedWantedIds(event, wantedSet)) {
+            if (event.id.toLowerCase() === target) continue;
+            const eng = byId[target];
+            if (!eng) continue;
+
+            if (event.kind === 7) eng.reactions += 1;
+            else if (event.kind === 6 || event.kind === 16) eng.reposts += 1;
+            else if (event.kind === 9735) eng.zapAmount += zapSatsFromReceipt(event);
+            else if (event.kind === 1) eng.replies += 1;
+          }
+        }
+      }
+    }
+  } finally {
+    pool.destroy();
+  }
+
+  return byId;
+}
+
+/**
+ * Fill engagement gaps with relay counts. Wine values win on conflict.
+ * Soft-fails: returns the wine map unchanged if relays error.
+ */
+async function enrichEngagementFromRelays(
+  notes: LocatedEvent[],
+  engagementById: Record<string, NoteEngagement>
+): Promise<Record<string, NoteEngagement>> {
+  const missing: string[] = [];
+  for (const note of notes) {
+    const id = note.id.toLowerCase();
+    if (!engagementById[id]) missing.push(id);
+  }
+  if (missing.length === 0) return engagementById;
+
+  try {
+    const relayEngagement = await fetchRelayEngagement(
+      missing.slice(0, ENGAGEMENT_BACKFILL_MAX)
+    );
+    const merged: Record<string, NoteEngagement> = { ...engagementById };
+    for (const [id, eng] of Object.entries(relayEngagement)) {
+      if (merged[id]) continue;
+      if (
+        eng.reactions > 0 ||
+        eng.replies > 0 ||
+        eng.reposts > 0 ||
+        eng.zapAmount > 0
+      ) {
+        merged[id] = eng;
+      }
+    }
+    return merged;
+  } catch {
+    return engagementById;
+  }
+}
+
 export const formatCreateAtDate = (unixTimestamp: number) => {
   const date = new Date(unixTimestamp * 1000);
   const formattedDate = date.toLocaleDateString([], {
@@ -236,15 +403,89 @@ export type TrendingFeed = {
 };
 
 /**
- * Fetch trending kind 1 notes, preserving relay arrival order (do not sort
- * by created_at — that is the trending ranking). Takes the full stream until
- * EOSE; the UI windows what it renders.
- *
- * Loads nostr.wine engagement metadata in parallel (labels only — does not
- * re-sort). Retries transient connect failures. On rate-limit (or exhausted
- * connect failures), falls back to wine HTTP ranking + public-relay hydration,
- * reusing the in-flight wine request. Does not retry rate-limit closes against
- * the trending relay.
+ * Client-side trending score weights. Wine's default ranking is reply-heavy, so
+ * reactions/reposts outrank replies; zaps use log scale to limit whale skew.
+ */
+export const RANK_WEIGHT_REACTIONS = 1;
+export const RANK_WEIGHT_REPLIES = 0.75;
+export const RANK_WEIGHT_REPOSTS = 2.5;
+/** Multiplier on log10(1 + zap sats). */
+export const RANK_ZAP_LOG_SCALE = 4;
+/** Hours added to age before gravity (HN-style floor). */
+export const RANK_AGE_OFFSET_HOURS = 2;
+export const RANK_GRAVITY = 1.35;
+
+function engagementPoints(engagement: NoteEngagement): number {
+  return (
+    RANK_WEIGHT_REACTIONS * engagement.reactions +
+    RANK_WEIGHT_REPLIES * engagement.replies +
+    RANK_WEIGHT_REPOSTS * engagement.reposts +
+    RANK_ZAP_LOG_SCALE * Math.log10(1 + engagement.zapAmount)
+  );
+}
+
+/**
+ * HN-style score: weighted wine engagement decayed by note age.
+ * Missing / zero engagement scores 0 (sorted after scored notes).
+ */
+export function scoreTrendingNote(
+  note: Pick<Event, "created_at">,
+  engagement: NoteEngagement | undefined,
+  nowSec = Math.floor(Date.now() / 1000)
+): number {
+  if (!engagement) return 0;
+  const points = engagementPoints(engagement);
+  if (points <= 0) return 0;
+  const ageHours = Math.max(0, (nowSec - note.created_at) / 3600);
+  return points / (ageHours + RANK_AGE_OFFSET_HOURS) ** RANK_GRAVITY;
+}
+
+/**
+ * Re-rank relay/wine candidates with our composite score. Stable for ties.
+ * If no engagement metadata is available, keeps source order.
+ */
+export function rankTrendingNotes(
+  notes: LocatedEvent[],
+  engagementById: Record<string, NoteEngagement>,
+  nowSec = Math.floor(Date.now() / 1000)
+): LocatedEvent[] {
+  if (notes.length < 2 || Object.keys(engagementById).length === 0) {
+    return notes;
+  }
+
+  return notes
+    .map((note, index) => ({
+      note,
+      index,
+      score: scoreTrendingNote(
+        note,
+        engagementById[note.id.toLowerCase()],
+        nowSec
+      ),
+    }))
+    .sort((a, b) => b.score - a.score || a.index - b.index)
+    .map((row) => row.note);
+}
+
+async function toTrendingFeed(
+  notes: LocatedEvent[],
+  engagementById: Record<string, NoteEngagement>
+): Promise<TrendingFeed> {
+  const engagement = await enrichEngagementFromRelays(notes, engagementById);
+  return {
+    notes: rankTrendingNotes(notes, engagement),
+    engagementById: engagement,
+  };
+}
+
+/**
+ * Fetch trending kind 1 notes from the trending relay (full stream until EOSE;
+ * the UI windows what it renders), then re-rank with wine engagement + age
+ * decay. Notes missing wine stats are backfilled from public relays (capped).
+ * Retries transient connect failures. On rate-limit (or exhausted connect
+ * failures), falls back to wine HTTP ids + public-relay hydration, reusing the
+ * in-flight wine request, then applies the same enrich + re-rank. Does not
+ * retry rate-limit closes against the trending relay.
  */
 export async function fetchTrendingFeed(): Promise<TrendingFeed> {
   // Soft-fail: notes still render if wine is down or rate-limited.
@@ -265,19 +506,16 @@ export async function fetchTrendingFeed(): Promise<TrendingFeed> {
 
     if (events.length > 0) {
       const wine = await winePromise;
-      return {
-        notes: toLocatedEvents(events, [TRENDING_RELAY]),
-        engagementById: wine?.engagementById ?? {},
-      };
+      return toTrendingFeed(
+        toLocatedEvents(events, [TRENDING_RELAY]),
+        wine?.engagementById ?? {}
+      );
     }
 
     // Genuine empty reply from a healthy subscription.
     if (closeReason === EOSE_CLOSE_REASON) {
       const wine = await winePromise;
-      return {
-        notes: [],
-        engagementById: wine?.engagementById ?? {},
-      };
+      return toTrendingFeed([], wine?.engagementById ?? {});
     }
 
     if (isRateLimitedCloseReason(closeReason)) {
@@ -314,10 +552,10 @@ export async function fetchTrendingFeed(): Promise<TrendingFeed> {
     }
 
     // Successful fallback (including empty) is the feed state — don't mask as relay error.
-    return {
-      notes: await hydrateTrendingNotesFromWine(wine),
-      engagementById: wine.engagementById,
-    };
+    return toTrendingFeed(
+      await hydrateTrendingNotesFromWine(wine),
+      wine.engagementById
+    );
   } catch {
     // Prefer the original relay error if hydration also fails.
   }
