@@ -556,6 +556,14 @@ a.hero-action {
   border-radius: 10px;
 }
 
+.note-image,
+.note-video {
+  width: auto;
+  max-height: min(70vh, 32rem);
+  height: auto;
+  object-fit: contain;
+}
+
 .note-embed {
   height: 380px;
   border: 0;
