@@ -153,41 +153,67 @@ function queryRelayOnce(
   });
 }
 
+/** Serialize wine calls and space them ≥1s so window switches cannot 429. */
+let wineGate: Promise<void> = Promise.resolve();
+let wineLastStartedAt = 0;
+
+async function withWineRateLimit<T>(fn: () => Promise<T>): Promise<T> {
+  const previous = wineGate;
+  let release!: () => void;
+  wineGate = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  try {
+    await previous;
+    const waitMs = Math.max(
+      0,
+      WINE_MIN_REQUEST_INTERVAL_MS - (Date.now() - wineLastStartedAt)
+    );
+    if (waitMs > 0) await sleep(waitMs);
+    wineLastStartedAt = Date.now();
+    return await fn();
+  } finally {
+    release();
+  }
+}
+
 async function fetchWineTrending(
   hours: TrendingHours
 ): Promise<WineTrendingPayload> {
-  const url = new URL(WINE_TRENDING_API);
-  url.searchParams.set("limit", String(WINE_TRENDING_LIMIT));
-  url.searchParams.set("hours", String(hours));
+  return withWineRateLimit(async () => {
+    const url = new URL(WINE_TRENDING_API);
+    url.searchParams.set("limit", String(WINE_TRENDING_LIMIT));
+    url.searchParams.set("hours", String(hours));
 
-  const response = await fetch(url);
-  if (!response.ok) {
-    throw new Error(`nostr.wine trending API HTTP ${response.status}`);
-  }
+    const response = await fetch(url);
+    if (!response.ok) {
+      throw new Error(`nostr.wine trending API HTTP ${response.status}`);
+    }
 
-  const data: unknown = await response.json();
-  if (!Array.isArray(data)) {
-    throw new Error("nostr.wine trending API returned a non-array body.");
-  }
+    const data: unknown = await response.json();
+    if (!Array.isArray(data)) {
+      throw new Error("nostr.wine trending API returned a non-array body.");
+    }
 
-  const ids: string[] = [];
-  const engagementById: Record<string, NoteEngagement> = {};
-  const seen = new Set<string>();
-  for (const item of data as WineTrendingItem[]) {
-    const id = item?.event_id;
-    if (!isEventId(id)) continue;
-    const normalized = id.toLowerCase();
-    if (seen.has(normalized)) continue;
-    seen.add(normalized);
-    ids.push(normalized);
-    engagementById[normalized] = {
-      reactions: asNonNegInt(item.reactions),
-      replies: asNonNegInt(item.replies),
-      reposts: asNonNegInt(item.reposts),
-      zapAmount: asNonNegInt(item.zap_amount),
-    };
-  }
-  return { ids, engagementById };
+    const ids: string[] = [];
+    const engagementById: Record<string, NoteEngagement> = {};
+    const seen = new Set<string>();
+    for (const item of data as WineTrendingItem[]) {
+      const id = item?.event_id;
+      if (!isEventId(id)) continue;
+      const normalized = id.toLowerCase();
+      if (seen.has(normalized)) continue;
+      seen.add(normalized);
+      ids.push(normalized);
+      engagementById[normalized] = {
+        reactions: asNonNegInt(item.reactions),
+        replies: asNonNegInt(item.replies),
+        reposts: asNonNegInt(item.reposts),
+        zapAmount: asNonNegInt(item.zap_amount),
+      };
+    }
+    return { ids, engagementById };
+  });
 }
 
 /**
@@ -502,7 +528,6 @@ export async function fetchTrendingFeed(
   }
 
   // Soft-fail: notes still render if wine is down or rate-limited.
-  const wineStartedAt = Date.now();
   const winePromise = fetchWineTrending(hours).then(
     (payload) => payload,
     () => null
@@ -553,14 +578,8 @@ export async function fetchTrendingFeed(
 
   try {
     let wine = await winePromise;
-    // Parallel request may have failed; wait out the 1 req/sec window, then
-    // retry once so the fallback feed is not lost to a back-to-back reject.
+    // Parallel request may have failed; retry once (rate gate spaces it).
     if (!wine) {
-      const waitMs = Math.max(
-        0,
-        WINE_MIN_REQUEST_INTERVAL_MS - (Date.now() - wineStartedAt)
-      );
-      if (waitMs > 0) await sleep(waitMs);
       wine = await fetchWineTrending(hours);
     }
 
@@ -582,7 +601,13 @@ export async function fetchTrendingFeed(
 async function fetchTrendingFeedFromWine(
   hours: TrendingHours
 ): Promise<TrendingFeed> {
-  const wine = await fetchWineTrending(hours);
+  let wine: WineTrendingPayload;
+  try {
+    wine = await fetchWineTrending(hours);
+  } catch {
+    // One retry after the shared rate gate spaces the next call.
+    wine = await fetchWineTrending(hours);
+  }
   return toTrendingFeed(
     await hydrateTrendingNotesFromWine(wine),
     wine.engagementById
