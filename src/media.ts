@@ -165,8 +165,12 @@ export function youtubeEmbedUrl(raw: string): string | null {
     if (!videoId || !YOUTUBE_VIDEO_ID.test(videoId)) return null;
 
     const embed = new URL(`https://www.youtube.com/embed/${videoId}`);
-    const start =
+    let start =
       parsed.searchParams.get("t") ?? parsed.searchParams.get("start");
+    if (!start && parsed.hash.startsWith("#")) {
+      const hashParams = new URLSearchParams(parsed.hash.slice(1));
+      start = hashParams.get("t") ?? hashParams.get("start");
+    }
     if (start) {
       const seconds = youtubeStartSeconds(start);
       if (seconds !== null && seconds >= 0) {
