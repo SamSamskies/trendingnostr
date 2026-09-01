@@ -125,9 +125,16 @@ const YOUTUBE_VIDEO_ID = /^[a-zA-Z0-9_-]{11}$/;
 
 function youtubeStartSeconds(raw: string): number | null {
   const value = raw.trim();
+  if (!value) return null;
   if (/^\d+$/.test(value)) return Number(value);
-  if (/^\d+s$/i.test(value)) return Number(value.slice(0, -1));
-  return null;
+
+  const match = value.match(/^(?:(\d+)h)?(?:(\d+)m)?(?:(\d+)s)?$/i);
+  if (!match || (!match[1] && !match[2] && !match[3])) return null;
+
+  const hours = match[1] ? Number(match[1]) : 0;
+  const minutes = match[2] ? Number(match[2]) : 0;
+  const seconds = match[3] ? Number(match[3]) : 0;
+  return hours * 3600 + minutes * 60 + seconds;
 }
 
 /** Build a youtube.com/embed URL for watch, youtu.be, shorts, and live links. */
