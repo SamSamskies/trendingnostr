@@ -121,6 +121,57 @@ function urlsMatch(a: string, b: string): boolean {
   return Boolean(hashA && hashB && hashA === hashB);
 }
 
+const YOUTUBE_VIDEO_ID = /^[a-zA-Z0-9_-]{11}$/;
+
+function youtubeStartSeconds(raw: string): number | null {
+  const value = raw.trim();
+  if (/^\d+$/.test(value)) return Number(value);
+  if (/^\d+s$/i.test(value)) return Number(value.slice(0, -1));
+  return null;
+}
+
+/** Build a youtube.com/embed URL for watch, youtu.be, shorts, and live links. */
+export function youtubeEmbedUrl(raw: string): string | null {
+  const url = normalizeHttpUrl(raw);
+
+  try {
+    const parsed = new URL(url);
+    const host = parsed.hostname.replace(/^www\./i, "").toLowerCase();
+    let videoId: string | undefined;
+
+    if (host === "youtu.be") {
+      videoId = parsed.pathname.split("/").filter(Boolean)[0];
+    } else if (
+      host === "youtube.com" ||
+      host === "m.youtube.com" ||
+      host === "music.youtube.com"
+    ) {
+      videoId = parsed.searchParams.get("v") ?? undefined;
+      if (!videoId) {
+        const pathMatch = parsed.pathname.match(
+          /^\/(?:embed|shorts|live|v)\/([^/?#]+)/
+        );
+        videoId = pathMatch?.[1];
+      }
+    }
+
+    if (!videoId || !YOUTUBE_VIDEO_ID.test(videoId)) return null;
+
+    const embed = new URL(`https://www.youtube.com/embed/${videoId}`);
+    const start =
+      parsed.searchParams.get("t") ?? parsed.searchParams.get("start");
+    if (start) {
+      const seconds = youtubeStartSeconds(start);
+      if (seconds !== null && seconds >= 0) {
+        embed.searchParams.set("start", String(seconds));
+      }
+    }
+    return embed.href;
+  } catch {
+    return null;
+  }
+}
+
 export function classifyUrl(url: string, tags: string[][] = []): MediaKind | null {
   const normalized = normalizeHttpUrl(url);
   const imeta = parseImeta(tags);

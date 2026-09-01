@@ -4,6 +4,7 @@ import {
   hyperlinkRegex,
   newlineRegex,
   normalizeHttpUrl,
+  youtubeEmbedUrl,
 } from "./media";
 import {
   isUnmodifiedLeftClick,
@@ -138,21 +139,38 @@ export const NoteContent = ({
           );
         }
 
-        if (/^https?:\/\//i.test(part) && part.match(wavlakeRegex)) {
-          const convertedUrl = part.replace(
-            /(?:player\.|www\.)?wavlake\.com/,
-            "embed.wavlake.com"
-          );
+        if (/^https?:\/\//i.test(part)) {
+          const youtubeEmbed = youtubeEmbedUrl(part);
+          if (youtubeEmbed) {
+            return (
+              <iframe
+                key={index}
+                className="note-embed"
+                src={youtubeEmbed}
+                loading="lazy"
+                title="YouTube video"
+                allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+                allowFullScreen
+              />
+            );
+          }
 
-          return (
-            <iframe
-              key={index}
-              className="note-embed"
-              src={convertedUrl}
-              loading="lazy"
-              title="WavLake Embed"
-            />
-          );
+          if (part.match(wavlakeRegex)) {
+            const convertedUrl = part.replace(
+              /(?:player\.|www\.)?wavlake\.com/,
+              "embed.wavlake.com"
+            );
+
+            return (
+              <iframe
+                key={index}
+                className="note-embed"
+                src={convertedUrl}
+                loading="lazy"
+                title="WavLake Embed"
+              />
+            );
+          }
         }
 
         const emojiMatch = /^:([A-Za-z0-9_-]+):$/.exec(part);
