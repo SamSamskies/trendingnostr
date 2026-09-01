@@ -3,7 +3,7 @@ import { useSyncExternalStore } from "react";
 const SETTINGS_KEY = "trendingnostr.settings";
 
 /** Wine trending windows offered in the UI (API allows 1–48). */
-export const TRENDING_HOURS_OPTIONS = [4, 24, 48] as const;
+export const TRENDING_HOURS_OPTIONS = [4, 12, 24, 48] as const;
 export type TrendingHours = (typeof TRENDING_HOURS_OPTIONS)[number];
 
 export type AppSettings = {

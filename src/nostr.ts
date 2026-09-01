@@ -597,7 +597,7 @@ async function toTrendingFeed(
  * wine engagement + age decay. On rate-limit / connect failure, falls back to
  * wine HTTP ids + public-relay hydration.
  *
- * For shorter windows (4h / 24h): wine HTTP is the candidate source (the
+ * For shorter windows (4h / 12h / 24h): wine HTTP is the candidate source (the
  * trending relay has no hours filter), then the same enrich + re-rank.
  */
 export async function fetchTrendingFeed(
