@@ -14,6 +14,8 @@ function unloadedMediaExtraHeight(root: HTMLElement): number {
   let extra = 0;
 
   for (const img of root.querySelectorAll<HTMLImageElement>("img.note-image")) {
+    // Grids use square cells with aspect-ratio; don't double-count lazy thumbs.
+    if (img.closest(".note-media-grid")) continue;
     if (img.complete) continue;
     const width = img.clientWidth || root.clientWidth;
     if (width <= 0) continue;
@@ -23,6 +25,7 @@ function unloadedMediaExtraHeight(root: HTMLElement): number {
   for (const video of root.querySelectorAll<HTMLVideoElement>(
     "video.note-video"
   )) {
+    if (video.closest(".note-media-grid")) continue;
     if (video.readyState >= HTMLMediaElement.HAVE_METADATA) continue;
     const width = video.clientWidth || root.clientWidth;
     if (width <= 0) continue;
