@@ -79,6 +79,12 @@ export function parseKind0Profile(event: Event): Kind0Profile {
 /** Nip-05 hosts whose authors are hidden from the trending feed. */
 const BLOCKED_NIP05_HOSTS = new Set(["nostrmag.com"]);
 
+/**
+ * Display names (kind 0 `display_name` / `name`) whose authors are hidden.
+ * Compared case-insensitively after trim + whitespace collapse.
+ */
+const BLOCKED_DISPLAY_NAMES = new Set(["craig andrew"]);
+
 /** Hostname from `name@domain` (lowercased), or null if missing/malformed. */
 export function nip05Hostname(nip05: string | undefined): string | null {
   if (!nip05) return null;
@@ -102,10 +108,24 @@ export function isBlockedNip05(nip05: string | undefined): boolean {
   return false;
 }
 
+/** Normalize for blocked-display-name matching. */
+function normalizeDisplayName(name: string): string {
+  return name.trim().replace(/\s+/g, " ").toLowerCase();
+}
+
+/** True when the profile display name is on the block list. */
+export function isBlockedDisplayName(displayName: string | undefined): boolean {
+  if (!displayName) return false;
+  return BLOCKED_DISPLAY_NAMES.has(normalizeDisplayName(displayName));
+}
+
 export function isBlockedAuthorProfile(
   profile: Kind0Profile | undefined
 ): boolean {
-  return isBlockedNip05(profile?.nip05);
+  return (
+    isBlockedNip05(profile?.nip05) ||
+    isBlockedDisplayName(profile?.displayName)
+  );
 }
 
 export function encodeNpub(pubkey: string): string {
