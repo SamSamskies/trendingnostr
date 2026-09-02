@@ -217,6 +217,78 @@ a.hero-action {
   cursor: pointer;
 }
 
+.settings-section {
+  margin-top: 1.1rem;
+}
+
+.settings-section-title {
+  margin: 0 0 0.55rem;
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: 0.98rem;
+  letter-spacing: -0.02em;
+}
+
+.settings-section-empty {
+  margin: 0;
+  padding: 0.75rem 0.9rem;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  font-size: 0.84rem;
+  color: var(--muted);
+}
+
+.settings-muted-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  overflow: hidden;
+}
+
+.settings-muted-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.65rem 0.9rem;
+}
+
+.settings-muted-item + .settings-muted-item {
+  border-top: 1px solid var(--line);
+}
+
+.settings-muted-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 0.9rem;
+}
+
+.settings-muted-unmute {
+  flex-shrink: 0;
+  border: none;
+  background: none;
+  padding: 0.2rem 0;
+  font-family: var(--font-mono);
+  font-size: 0.68rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted);
+  cursor: pointer;
+}
+
+.settings-muted-unmute:hover {
+  color: var(--ink);
+}
+
+.settings-muted-unmute:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
 .visually-hidden {
   position: absolute;
   width: 1px;
@@ -352,8 +424,6 @@ a.hero-action {
   min-width: 0;
   margin: 0 0 0.75rem;
   padding-right: 1.35rem;
-  color: inherit;
-  text-decoration: none;
 }
 
 .note-author-copy {
@@ -363,7 +433,15 @@ a.hero-action {
   gap: 0.12rem;
 }
 
+.note-author-heading {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  min-width: 0;
+}
+
 .note-author-name {
+  min-width: 0;
   font-family: var(--font-display);
   font-weight: 600;
   font-size: 0.95rem;
@@ -372,10 +450,39 @@ a.hero-action {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  color: inherit;
+  text-decoration: none;
 }
 
-.note-author:hover .note-author-name {
+a.note-author-name:hover {
   color: var(--accent);
+}
+
+.note-mute {
+  flex-shrink: 0;
+  margin: 0;
+  padding: 0.14rem 0.5rem;
+  border: 1px solid rgba(159, 18, 57, 0.28);
+  border-radius: 999px;
+  background: rgba(159, 18, 57, 0.08);
+  font-family: var(--font-mono);
+  font-size: 0.62rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  line-height: 1.2;
+  color: var(--danger);
+  cursor: pointer;
+}
+
+.note-mute:hover {
+  background: var(--danger);
+  border-color: var(--danger);
+  color: #fff;
+}
+
+.note-mute:focus-visible {
+  outline: 2px solid var(--danger);
+  outline-offset: 2px;
 }
 
 .note time {
@@ -649,9 +756,42 @@ a.hero-action {
 }
 
 .primary:disabled,
-.secondary:disabled {
+.secondary:disabled,
+.danger:disabled {
   opacity: 0.45;
   cursor: not-allowed;
+}
+
+.danger {
+  font: inherit;
+  font-family: var(--font-display);
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  border-radius: 10px;
+  padding: 0.7rem 1.1rem;
+  cursor: pointer;
+  min-height: 2.6rem;
+  width: 100%;
+  border: none;
+  background: var(--danger);
+  color: #fff;
+}
+
+.danger:hover:not(:disabled) {
+  background: #861035;
+}
+
+.confirm-dialog-text {
+  margin: 0 0 1rem;
+  font-size: 0.92rem;
+  line-height: 1.45;
+  color: var(--muted);
+  text-align: center;
+}
+
+.confirm-dialog-text strong {
+  color: var(--ink);
+  font-weight: 600;
 }
 
 .open-in-dialog {
@@ -686,13 +826,19 @@ a.hero-action {
   gap: 0.5rem;
 }
 
+.open-in-list > .primary,
+.open-in-list > .secondary,
+.open-in-list > .danger,
+a.open-in-link {
+  width: 100%;
+  box-sizing: border-box;
+}
+
 a.open-in-link {
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 100%;
   text-decoration: none;
-  box-sizing: border-box;
 }
 
 .open-in-cancel {
@@ -715,7 +861,8 @@ a.open-in-link {
 }
 
 .open-in-cancel:focus-visible,
-a.open-in-link:focus-visible {
+a.open-in-link:focus-visible,
+.danger:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 2px;
 }

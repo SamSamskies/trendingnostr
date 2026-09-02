@@ -1,11 +1,26 @@
 import { useEffect, useId, useRef } from "react";
-import { setWebSearchEnabled, useWebSearchEnabled } from "./settings";
+import type { Kind0Profile } from "./identity";
+import { profileLabel } from "./mentions";
+import {
+  setWebSearchEnabled,
+  unmuteAuthor,
+  useMutedAuthors,
+  useWebSearchEnabled,
+} from "./settings";
 
-export function SettingsDialog({ onClose }: { onClose: () => void }) {
+export function SettingsDialog({
+  profiles,
+  onClose,
+}: {
+  profiles: Record<string, Kind0Profile>;
+  onClose: () => void;
+}) {
   const dialogRef = useRef<HTMLDialogElement>(null);
   const titleId = useId();
   const webSearchId = useId();
+  const mutedTitleId = useId();
   const webSearch = useWebSearchEnabled();
+  const mutedAuthors = useMutedAuthors();
   const onCloseRef = useRef(onClose);
   onCloseRef.current = onClose;
 
@@ -50,6 +65,31 @@ export function SettingsDialog({ onClose }: { onClose: () => void }) {
           onChange={(event) => setWebSearchEnabled(event.target.checked)}
         />
       </label>
+      <section className="settings-section" aria-labelledby={mutedTitleId}>
+        <h3 id={mutedTitleId} className="settings-section-title">
+          Muted authors
+        </h3>
+        {mutedAuthors.length === 0 ? (
+          <p className="settings-section-empty">No muted authors.</p>
+        ) : (
+          <ul className="settings-muted-list">
+            {mutedAuthors.map((pubkey) => (
+              <li key={pubkey} className="settings-muted-item">
+                <span className="settings-muted-name">
+                  {profileLabel(pubkey, profiles[pubkey]?.displayName)}
+                </span>
+                <button
+                  type="button"
+                  className="settings-muted-unmute"
+                  onClick={() => unmuteAuthor(pubkey)}
+                >
+                  Unmute
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
+      </section>
       <button
         type="button"
         className="open-in-cancel"

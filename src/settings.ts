@@ -11,12 +11,34 @@ export type AppSettings = {
   webSearch: boolean;
   /** Last selected trending window; restored on next visit. */
   trendingHours: TrendingHours;
+  /** Lowercase hex pubkeys hidden from the feed. */
+  mutedAuthors: string[];
 };
 
 const DEFAULT_SETTINGS: AppSettings = {
   webSearch: true,
   trendingHours: 48,
+  mutedAuthors: [],
 };
+
+function normalizeMutedAuthors(raw: unknown): string[] {
+  if (!Array.isArray(raw)) return [];
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const item of raw) {
+    if (typeof item !== "string") continue;
+    const pubkey = item.trim().toLowerCase();
+    if (!/^[0-9a-f]{64}$/.test(pubkey) || seen.has(pubkey)) continue;
+    seen.add(pubkey);
+    out.push(pubkey);
+  }
+  return out;
+}
+
+function normalizePubkey(pubkey: string): string | null {
+  const normalized = pubkey.trim().toLowerCase();
+  return /^[0-9a-f]{64}$/.test(normalized) ? normalized : null;
+}
 
 let cache: AppSettings | null = null;
 const listeners = new Set<() => void>();
@@ -41,6 +63,7 @@ function normalize(raw: unknown): AppSettings {
     trendingHours: isTrendingHours(record.trendingHours)
       ? record.trendingHours
       : DEFAULT_SETTINGS.trendingHours,
+    mutedAuthors: normalizeMutedAuthors(record.mutedAuthors),
   };
 }
 
@@ -116,5 +139,42 @@ export function useTrendingHours(): TrendingHours {
     subscribe,
     getTrendingHours,
     () => DEFAULT_SETTINGS.trendingHours
+  );
+}
+
+export function getMutedAuthors(): string[] {
+  return readSettings().mutedAuthors;
+}
+
+export function isAuthorMuted(pubkey: string): boolean {
+  const normalized = normalizePubkey(pubkey);
+  if (!normalized) return false;
+  return readSettings().mutedAuthors.includes(normalized);
+}
+
+export function muteAuthor(pubkey: string): void {
+  const normalized = normalizePubkey(pubkey);
+  if (!normalized || isAuthorMuted(normalized)) return;
+  const current = readSettings();
+  writeSettings({
+    ...current,
+    mutedAuthors: [...current.mutedAuthors, normalized],
+  });
+}
+
+export function unmuteAuthor(pubkey: string): void {
+  const normalized = normalizePubkey(pubkey);
+  if (!normalized) return;
+  const current = readSettings();
+  const mutedAuthors = current.mutedAuthors.filter((pk) => pk !== normalized);
+  if (mutedAuthors.length === current.mutedAuthors.length) return;
+  writeSettings({ ...current, mutedAuthors });
+}
+
+export function useMutedAuthors(): string[] {
+  return useSyncExternalStore(
+    subscribe,
+    getMutedAuthors,
+    () => DEFAULT_SETTINGS.mutedAuthors
   );
 }
