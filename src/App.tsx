@@ -8,6 +8,7 @@ import {
   type OpenInTarget,
 } from "./OpenInDialog";
 import { SettingsDialog } from "./SettingsDialog";
+import { MuteAuthorDialog } from "./MuteAuthorDialog";
 import {
   addIdentities,
   collectMentionIdentities,
@@ -36,20 +37,34 @@ import {
   type NoteEngagement,
 } from "./nostr";
 import {
+  muteAuthor,
   setTrendingHours,
   TRENDING_HOURS_OPTIONS,
+  useMutedAuthors,
   useTrendingHours,
 } from "./settings";
 
 const SKELETON_LINE_COUNTS = [3, 2, 4, 2, 3] as const;
 
-function filterBlockedNip05Authors(
+function filterHiddenAuthors(
   notes: LocatedEvent[],
-  profiles: Record<string, Kind0Profile>
+  profiles: Record<string, Kind0Profile>,
+  mutedPubkeys: ReadonlySet<string>
 ): LocatedEvent[] {
-  return notes.filter(
-    (note) => !isBlockedAuthorProfile(profiles[note.pubkey.toLowerCase()])
-  );
+  return notes.filter((note) => {
+    const pubkey = note.pubkey.toLowerCase();
+    if (mutedPubkeys.has(pubkey)) return false;
+    return !isBlockedAuthorProfile(profiles[pubkey]);
+  });
+}
+
+function visiblePageLength(eventCount: number, currentLength: number): number {
+  if (eventCount === 0) return 0;
+  const capped = Math.min(currentLength, eventCount);
+  if (capped < WINDOW_PAGE_SIZE) {
+    return Math.min(WINDOW_PAGE_SIZE, eventCount);
+  }
+  return capped;
 }
 
 /** Compact counts for engagement labels (e.g. 1.2k, 3.4M). */
@@ -222,11 +237,13 @@ function NoteAuthor({
   createdAt,
   profile,
   onOpenProfile,
+  onMute,
 }: {
   pubkey: string;
   createdAt: number;
   profile?: Kind0Profile;
   onOpenProfile: (code: string) => void;
+  onMute: () => void;
 }) {
   const code = encodeNpub(pubkey);
   const name = profileLabel(pubkey, profile?.displayName);
@@ -236,23 +253,9 @@ function NoteAuthor({
     </time>
   );
 
-  const body = (
-    <>
-      <Avatar src={profile?.picture} />
-      <span className="note-author-copy">
-        <span className="note-author-name">{name}</span>
-        {timestamp}
-      </span>
-    </>
-  );
-
-  if (!code) {
-    return <div className="note-author">{body}</div>;
-  }
-
-  return (
+  const nameEl = code ? (
     <a
-      className="note-author"
+      className="note-author-name"
       href={njumpHref(code)}
       target="_blank"
       rel="noreferrer"
@@ -262,13 +265,41 @@ function NoteAuthor({
         onOpenProfile(code);
       }}
     >
-      {body}
+      {name}
     </a>
+  ) : (
+    <span className="note-author-name">{name}</span>
+  );
+
+  return (
+    <div className="note-author">
+      <Avatar src={profile?.picture} />
+      <span className="note-author-copy">
+        <span className="note-author-heading">
+          {nameEl}
+          <button
+            type="button"
+            className="note-mute"
+            aria-label={`Mute ${name}`}
+            title={`Mute ${name}`}
+            onClick={onMute}
+          >
+            mute
+          </button>
+        </span>
+        {timestamp}
+      </span>
+    </div>
   );
 }
 
 export default function App() {
   const trendingHours = useTrendingHours();
+  const mutedAuthors = useMutedAuthors();
+  const mutedPubkeys = useMemo(
+    () => new Set(mutedAuthors),
+    [mutedAuthors]
+  );
   const [events, setEvents] = useState<LocatedEvent[]>([]);
   const [engagementById, setEngagementById] = useState<
     Record<string, NoteEngagement>
@@ -279,6 +310,10 @@ export default function App() {
   const [error, setError] = useState<string | null>(null);
   const [reloadToken, setReloadToken] = useState(0);
   const [openTarget, setOpenTarget] = useState<OpenInTarget | null>(null);
+  const [muteConfirm, setMuteConfirm] = useState<{
+    pubkey: string;
+    authorLabel: string;
+  } | null>(null);
   const [askNote, setAskNote] = useState<LocatedEvent | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const askAiRef = useRef<AskAiPanelHandle>(null);
@@ -332,21 +367,41 @@ export default function App() {
   }, [reloadToken, trendingHours]);
 
   const displayEvents = useMemo(
-    () => filterBlockedNip05Authors(events, profiles),
+    () => filterHiddenAuthors(events, profiles, mutedPubkeys),
+    [events, profiles, mutedPubkeys]
+  );
+
+  const nonBlockedEvents = useMemo(
+    () =>
+      events.filter(
+        (note) => !isBlockedAuthorProfile(profiles[note.pubkey.toLowerCase()])
+      ),
     [events, profiles]
   );
+
+  const allFilteredByMute =
+    !loading &&
+    !error &&
+    displayEvents.length === 0 &&
+    nonBlockedEvents.length > 0 &&
+    nonBlockedEvents.every((note) =>
+      mutedPubkeys.has(note.pubkey.toLowerCase())
+    );
+
+  const handleMuteAuthor = (pubkey: string) => {
+    muteAuthor(pubkey);
+    if (askNote?.pubkey.toLowerCase() === pubkey.toLowerCase()) {
+      askAiRef.current?.close();
+      setAskNote(null);
+    }
+  };
 
   // After profiles arrive and spam authors drop out, clamp the window and
   // top up the first page so the feed does not look sparsely loaded.
   useEffect(() => {
-    setCurrentDataLength((prev) => {
-      if (displayEvents.length === 0) return 0;
-      const capped = Math.min(prev, displayEvents.length);
-      if (capped < WINDOW_PAGE_SIZE) {
-        return Math.min(WINDOW_PAGE_SIZE, displayEvents.length);
-      }
-      return capped;
-    });
+    setCurrentDataLength((prev) =>
+      visiblePageLength(displayEvents.length, prev)
+    );
   }, [displayEvents.length]);
 
   useEffect(() => {
@@ -365,7 +420,14 @@ export default function App() {
     return () => observer.disconnect();
   }, [currentDataLength, displayEvents.length]);
 
-  const visibleEvents = displayEvents.slice(0, currentDataLength);
+  const visibleEvents = useMemo(
+    () =>
+      displayEvents.slice(
+        0,
+        visiblePageLength(displayEvents.length, currentDataLength)
+      ),
+    [displayEvents, currentDataLength]
+  );
 
   // Prefetch authors + mentions for the full feed so scrolled-in notes already
   // have names/avatars (cache paints instantly; relays fill gaps in the background).
@@ -479,19 +541,31 @@ export default function App() {
         </>
       ) : null}
 
-      {!loading && (error || visibleEvents.length === 0) ? (
+      {!loading && (error || displayEvents.length === 0) ? (
         <div className="status status-error" role="status">
           <p>
             {error ??
-              "No trending notes right now. Try again in a moment."}
+              (allFilteredByMute
+                ? "Every note in this window is from a muted author. Open Settings to manage mutes."
+                : "No trending notes right now. Try again in a moment.")}
           </p>
-          <button
-            type="button"
-            className="status-retry"
-            onClick={() => setReloadToken((token) => token + 1)}
-          >
-            Try again
-          </button>
+          {allFilteredByMute ? (
+            <button
+              type="button"
+              className="status-retry"
+              onClick={() => setSettingsOpen(true)}
+            >
+              Open settings
+            </button>
+          ) : (
+            <button
+              type="button"
+              className="status-retry"
+              onClick={() => setReloadToken((token) => token + 1)}
+            >
+              Try again
+            </button>
+          )}
         </div>
       ) : null}
 
@@ -500,6 +574,7 @@ export default function App() {
           <ol className="results">
             {visibleEvents.map((note) => {
               const engagement = engagementById[note.id.toLowerCase()];
+              const authorProfile = profiles[note.pubkey.toLowerCase()];
               const openNote = () => {
                 try {
                   setOpenTarget({
@@ -529,9 +604,18 @@ export default function App() {
                   <NoteAuthor
                     pubkey={note.pubkey}
                     createdAt={note.created_at}
-                    profile={profiles[note.pubkey.toLowerCase()]}
+                    profile={authorProfile}
                     onOpenProfile={(code) =>
                       setOpenTarget({ kind: "profile", code })
+                    }
+                    onMute={() =>
+                      setMuteConfirm({
+                        pubkey: note.pubkey,
+                        authorLabel: profileLabel(
+                          note.pubkey,
+                          authorProfile?.displayName
+                        ),
+                      })
                     }
                   />
                   <NoteBody>
@@ -569,13 +653,24 @@ export default function App() {
       ) : null}
 
       {settingsOpen ? (
-        <SettingsDialog onClose={() => setSettingsOpen(false)} />
+        <SettingsDialog
+          profiles={profiles}
+          onClose={() => setSettingsOpen(false)}
+        />
       ) : null}
 
       {openTarget ? (
         <OpenInDialog
           target={openTarget}
           onClose={() => setOpenTarget(null)}
+        />
+      ) : null}
+
+      {muteConfirm ? (
+        <MuteAuthorDialog
+          authorLabel={muteConfirm.authorLabel}
+          onConfirm={() => handleMuteAuthor(muteConfirm.pubkey)}
+          onClose={() => setMuteConfirm(null)}
         />
       ) : null}
 
