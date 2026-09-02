@@ -4,7 +4,11 @@ import {
   fetchFayanUsers,
   filterNotesByFayanReputation,
 } from "./fayan";
-import { isFayanFilterEnabled, type TrendingHours } from "./settings";
+import {
+  isFayanFilterEnabled,
+  isHashtagFilterEnabled,
+  type TrendingHours,
+} from "./settings";
 
 export type LocatedEvent = Event & { seenOn: string[] };
 
@@ -60,6 +64,12 @@ const SPAM_REPORTER_PUBKEY =
 /** Per-relay cap when fetching kind-1984 spam reports for feed note ids. */
 const SPAM_REPORT_QUERY_LIMIT = 200;
 
+/**
+ * Notes with this many or more distinct `t` (hashtag) tags are hidden.
+ * Spammers often bury hashtags in tags without putting them in content.
+ */
+const MAX_HASHTAG_TAGS = 3;
+
 export const RELAY_MAX_WAIT_MS = 4500;
 /** How many times to retry a failed trending-relay connection. */
 export const TRENDING_FETCH_ATTEMPTS = 3;
@@ -87,6 +97,23 @@ export class TrendingRelayError extends Error {
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+/** Distinct non-empty `t` tag values on a kind 1 event (NIP-12 hashtags). */
+export function countHashtagTags(tags: string[][]): number {
+  const seen = new Set<string>();
+  for (const tag of tags) {
+    if (tag[0] !== "t") continue;
+    const value = typeof tag[1] === "string" ? tag[1].trim().toLowerCase() : "";
+    if (value) seen.add(value);
+  }
+  return seen.size;
+}
+
+function filterExcessHashtagNotes<T extends { tags: string[][] }>(
+  notes: T[]
+): T[] {
+  return notes.filter((note) => countHashtagTags(note.tags) <= MAX_HASHTAG_TAGS);
 }
 
 function isRateLimitedCloseReason(reason: string): boolean {
@@ -595,6 +622,10 @@ async function toTrendingFeed(
     spamIds.size === 0
       ? notes
       : notes.filter((note) => !spamIds.has(note.id.toLowerCase()));
+
+  if (isHashtagFilterEnabled()) {
+    visible = filterExcessHashtagNotes(visible);
+  }
 
   // Fail open: only filter when Fayan returned a successful map.
   if (fayanEnabled && fayanUsers) {

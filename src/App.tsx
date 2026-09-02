@@ -41,6 +41,7 @@ import {
   setTrendingHours,
   TRENDING_HOURS_OPTIONS,
   useFayanFilterEnabled,
+  useHashtagFilterEnabled,
   useMutedAuthors,
   useTrendingHours,
 } from "./settings";
@@ -297,6 +298,7 @@ function NoteAuthor({
 export default function App() {
   const trendingHours = useTrendingHours();
   const fayanFilter = useFayanFilterEnabled();
+  const hashtagFilter = useHashtagFilterEnabled();
   const mutedAuthors = useMutedAuthors();
   const mutedPubkeys = useMemo(
     () => new Set(mutedAuthors),
@@ -366,7 +368,7 @@ export default function App() {
     return () => {
       cancelled = true;
     };
-  }, [reloadToken, trendingHours, fayanFilter]);
+  }, [reloadToken, trendingHours, fayanFilter, hashtagFilter]);
 
   const displayEvents = useMemo(
     () => filterHiddenAuthors(events, profiles, mutedPubkeys),

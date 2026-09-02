@@ -3,9 +3,11 @@ import type { Kind0Profile } from "./identity";
 import { profileLabel } from "./mentions";
 import {
   setFayanFilterEnabled,
+  setHashtagFilterEnabled,
   setWebSearchEnabled,
   unmuteAuthor,
   useFayanFilterEnabled,
+  useHashtagFilterEnabled,
   useMutedAuthors,
   useWebSearchEnabled,
 } from "./settings";
@@ -22,9 +24,11 @@ export function SettingsDialog({
   const titleId = useId();
   const webSearchId = useId();
   const fayanFilterId = useId();
+  const hashtagFilterId = useId();
   const mutedTitleId = useId();
   const webSearch = useWebSearchEnabled();
   const fayanFilter = useFayanFilterEnabled();
+  const hashtagFilter = useHashtagFilterEnabled();
   const mutedAuthors = useMutedAuthors();
   const onCloseRef = useRef(onClose);
   onCloseRef.current = onClose;
@@ -84,6 +88,22 @@ export function SettingsDialog({
           type="checkbox"
           checked={fayanFilter}
           onChange={(event) => setFayanFilterEnabled(event.target.checked)}
+        />
+      </label>
+      <label className="settings-row" htmlFor={hashtagFilterId}>
+        <span className="settings-row-text">
+          <span className="settings-row-label">Filter hashtag spam</span>
+          <span className="settings-row-hint">
+            Hide notes with 4 or more hashtag tags on the event. Spammers often
+            bury these in tags without showing them in the note text.
+          </span>
+        </span>
+        <input
+          id={hashtagFilterId}
+          className="settings-toggle"
+          type="checkbox"
+          checked={hashtagFilter}
+          onChange={(event) => setHashtagFilterEnabled(event.target.checked)}
         />
       </label>
       <section className="settings-section" aria-labelledby={mutedTitleId}>
