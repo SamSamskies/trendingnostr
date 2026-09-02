@@ -87,7 +87,9 @@ export async function fetchFayanUsers(
         }
       }
     }
-    return byPubkey;
+    // Empty map after a real lookup is unusable (parse failures / empty payload).
+    // Return null so callers fail open instead of hiding every note.
+    return byPubkey.size > 0 ? byPubkey : null;
   } catch {
     return null;
   }
