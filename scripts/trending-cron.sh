@@ -41,6 +41,15 @@ LOG_FILE="$LOG_DIR/warm.jsonl"
 STATE_FILE="$LOG_DIR/state.env"
 PLIST_PATH="${HOME}/Library/LaunchAgents/${LABEL}.plist"
 
+# launchd uses a minimal PATH; include node managers (volta/fnm/nvm) + current node dir.
+CRON_PATH_PREFIX=""
+if command -v node >/dev/null 2>&1; then
+  CRON_PATH_PREFIX="$(cd "$(dirname "$(command -v node)")" && pwd):"
+fi
+CRON_PATH="${CRON_PATH_PREFIX}${HOME}/.volta/bin:${HOME}/.local/share/fnm/current/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin"
+# Prefer this PATH for node/curl when launchd (or a thin env) invoked us.
+export PATH="${CRON_PATH}:${PATH}"
+
 usage() {
   sed -n '2,18p' "$0" | sed 's/^# \?//'
   exit "${1:-0}"
@@ -254,7 +263,7 @@ write_plist() {
     <key>TRENDING_CRON_BYPASS_SECRET</key>
     <string>${BYPASS_SECRET}</string>
     <key>PATH</key>
-    <string>/usr/local/bin:/opt/homebrew/bin:/usr/bin:/bin</string>
+    <string>${CRON_PATH}</string>
   </dict>
   <key>StandardOutPath</key>
   <string>${launch_out}</string>
