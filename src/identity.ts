@@ -77,7 +77,7 @@ export function parseKind0Profile(event: Event): Kind0Profile {
 }
 
 /** Nip-05 hosts whose authors are hidden from the trending feed. */
-const BLOCKED_NIP05_HOSTS = new Set(["nostrmag.com"]);
+const BLOCKED_NIP05_HOSTS = new Set(["nostrmag.com", "cdnsoft.net"]);
 
 /**
  * Display names (kind 0 `display_name` / `name`) whose authors are hidden.
