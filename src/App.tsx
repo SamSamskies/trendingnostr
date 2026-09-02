@@ -362,12 +362,22 @@ export default function App() {
     [events, profiles, mutedPubkeys]
   );
 
+  const nonBlockedEvents = useMemo(
+    () =>
+      events.filter(
+        (note) => !isBlockedAuthorProfile(profiles[note.pubkey.toLowerCase()])
+      ),
+    [events, profiles]
+  );
+
   const allFilteredByMute =
     !loading &&
     !error &&
-    events.length > 0 &&
     displayEvents.length === 0 &&
-    events.every((note) => mutedPubkeys.has(note.pubkey.toLowerCase()));
+    nonBlockedEvents.length > 0 &&
+    nonBlockedEvents.every((note) =>
+      mutedPubkeys.has(note.pubkey.toLowerCase())
+    );
 
   const handleMuteAuthor = (pubkey: string) => {
     muteAuthor(pubkey);
