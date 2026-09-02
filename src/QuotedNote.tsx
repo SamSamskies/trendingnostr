@@ -380,6 +380,15 @@ export function QuotedNote({
       }}
       onKeyDown={(event) => {
         if (event.key !== "Enter" && event.key !== " ") return;
+        const target = event.target;
+        if (
+          target instanceof Element &&
+          target.closest(
+            "a, button, iframe, .note-embed, .note-image, .note-video, .note-media-grid"
+          )
+        ) {
+          return;
+        }
         event.preventDefault();
         openQuotedNote(event, noteRef.code, onOpen);
       }}
