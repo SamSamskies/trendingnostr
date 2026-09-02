@@ -2,11 +2,14 @@ import { useEffect, useId, useRef } from "react";
 import type { Kind0Profile } from "./identity";
 import { profileLabel } from "./mentions";
 import {
+  setFayanFilterEnabled,
   setWebSearchEnabled,
   unmuteAuthor,
+  useFayanFilterEnabled,
   useMutedAuthors,
   useWebSearchEnabled,
 } from "./settings";
+import { FAYAN_MIN_PERCENTILE } from "./fayan";
 
 export function SettingsDialog({
   profiles,
@@ -18,8 +21,10 @@ export function SettingsDialog({
   const dialogRef = useRef<HTMLDialogElement>(null);
   const titleId = useId();
   const webSearchId = useId();
+  const fayanFilterId = useId();
   const mutedTitleId = useId();
   const webSearch = useWebSearchEnabled();
+  const fayanFilter = useFayanFilterEnabled();
   const mutedAuthors = useMutedAuthors();
   const onCloseRef = useRef(onClose);
   onCloseRef.current = onClose;
@@ -63,6 +68,22 @@ export function SettingsDialog({
           type="checkbox"
           checked={webSearch}
           onChange={(event) => setWebSearchEnabled(event.target.checked)}
+        />
+      </label>
+      <label className="settings-row" htmlFor={fayanFilterId}>
+        <span className="settings-row-text">
+          <span className="settings-row-label">Filter low-reputation authors</span>
+          <span className="settings-row-hint">
+            Hide authors missing from Fayan or below the {FAYAN_MIN_PERCENTILE}
+            th percentile. If Fayan is unavailable, the feed stays unfiltered.
+          </span>
+        </span>
+        <input
+          id={fayanFilterId}
+          className="settings-toggle"
+          type="checkbox"
+          checked={fayanFilter}
+          onChange={(event) => setFayanFilterEnabled(event.target.checked)}
         />
       </label>
       <section className="settings-section" aria-labelledby={mutedTitleId}>

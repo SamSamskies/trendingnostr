@@ -188,6 +188,10 @@ a.hero-action {
   cursor: pointer;
 }
 
+.settings-row + .settings-row {
+  margin-top: 0.55rem;
+}
+
 .settings-row-text {
   display: flex;
   flex-direction: column;
