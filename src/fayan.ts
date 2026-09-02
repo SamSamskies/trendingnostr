@@ -1,8 +1,9 @@
-/** Match the upstream Fayan batch limit. */
-export const FAYAN_ENDPOINT = "/api/fayan";
+/** Official Fayan API — GET is CORS-allowed (`Access-Control-Allow-Origin: *`). */
+export const FAYAN_BASE_URL = "https://fayan.jumble.social";
 /** Authors at or above this percentile are kept. Below (or missing) are hidden. */
 export const FAYAN_MIN_PERCENTILE = 40;
-export const FAYAN_BATCH_SIZE = 100;
+/** Parallel GETs per batch; keep modest to avoid hammering Fayan. */
+export const FAYAN_CONCURRENCY = 10;
 
 export type FayanUser = {
   pubkey: string;
@@ -12,19 +13,11 @@ export type FayanUser = {
   following: number;
 };
 
-/** Map keyed by lowercase hex pubkey (and request key when that differed). */
+/** Map keyed by lowercase hex pubkey. */
 export type FayanUserMap = Map<string, FayanUser>;
 
 function isHexPubkey(value: string): boolean {
   return /^[0-9a-f]{64}$/i.test(value);
-}
-
-function chunkArray<T>(array: T[], chunkSize: number): T[][] {
-  const chunks: T[][] = [];
-  for (let i = 0; i < array.length; i += chunkSize) {
-    chunks.push(array.slice(i, i + chunkSize));
-  }
-  return chunks;
 }
 
 function parseFayanUser(raw: unknown): FayanUser | null {
@@ -49,9 +42,32 @@ function parseFayanUser(raw: unknown): FayanUser | null {
   };
 }
 
+async function mapPool<T>(
+  items: T[],
+  concurrency: number,
+  fn: (item: T) => Promise<void>
+): Promise<void> {
+  let next = 0;
+  const workers = Math.min(concurrency, items.length);
+  await Promise.all(
+    Array.from({ length: workers }, async () => {
+      while (next < items.length) {
+        const index = next;
+        next += 1;
+        await fn(items[index]);
+      }
+    })
+  );
+}
+
 /**
- * Batch-lookup Fayan reputation for unique pubkeys via `/api/fayan`.
- * Returns `null` on any failure so callers can fail open.
+ * Look up Fayan reputation for unique pubkeys via browser GET
+ * (`/users/{pubkey}`). Vercel serverless IPs get Cloudflare HTML challenges
+ * talking to Fayan, so we must not proxy from `/api/fayan`.
+ *
+ * Returns `null` on any hard failure so callers can fail open.
+ * 404 (unknown author) is success: the pubkey is simply omitted from the map.
+ * An empty map after all lookups succeed means every author was unknown.
  */
 export async function fetchFayanUsers(
   pubkeys: string[]
@@ -64,32 +80,29 @@ export async function fetchFayanUsers(
   if (unique.length === 0) return new Map();
 
   const byPubkey: FayanUserMap = new Map();
+  let completed = 0;
 
   try {
-    for (const chunk of chunkArray(unique, FAYAN_BATCH_SIZE)) {
-      const res = await fetch(FAYAN_ENDPOINT, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ pubkeys: chunk }),
-      });
-      if (!res.ok) return null;
+    await mapPool(unique, FAYAN_CONCURRENCY, async (pubkey) => {
+      const res = await fetch(
+        `${FAYAN_BASE_URL}/users/${encodeURIComponent(pubkey)}`,
+        { headers: { Accept: "application/json" } }
+      );
+
+      if (res.status === 404) {
+        completed += 1;
+        return;
+      }
+      if (!res.ok) throw new Error(`fayan_${res.status}`);
 
       const data: unknown = await res.json();
-      if (!data || typeof data !== "object" || Array.isArray(data)) return null;
+      const user = parseFayanUser(data);
+      if (user) byPubkey.set(user.pubkey, user);
+      completed += 1;
+    });
 
-      for (const [key, value] of Object.entries(data)) {
-        const user = parseFayanUser(value);
-        if (!user) continue;
-        byPubkey.set(user.pubkey, user);
-        const requestKey = key.trim().toLowerCase();
-        if (requestKey && requestKey !== user.pubkey) {
-          byPubkey.set(requestKey, user);
-        }
-      }
-    }
-    // Empty map after a real lookup is unusable (parse failures / empty payload).
-    // Return null so callers fail open instead of hiding every note.
-    return byPubkey.size > 0 ? byPubkey : null;
+    // Only trust the map when every key got a 200 or 404.
+    return completed === unique.length ? byPubkey : null;
   } catch {
     return null;
   }
