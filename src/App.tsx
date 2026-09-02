@@ -69,6 +69,20 @@ function visiblePageLength(eventCount: number, currentLength: number): number {
   return capped;
 }
 
+function mergeProfiles(
+  prev: Record<string, Kind0Profile>,
+  found: Record<string, Kind0Profile>
+): Record<string, Kind0Profile> {
+  let changed = false;
+  const next = { ...prev };
+  for (const [pubkey, profile] of Object.entries(found)) {
+    if (prev[pubkey] === profile) continue;
+    next[pubkey] = profile;
+    changed = true;
+  }
+  return changed ? next : prev;
+}
+
 /** Compact counts for engagement labels (e.g. 1.2k, 3.4M). */
 function formatEngagementCount(value: number): string {
   if (value < 1000) return String(value);
@@ -447,19 +461,6 @@ export default function App() {
     );
 
     const pubkeys = identities.map((id) => id.pubkey);
-    const mergeProfiles = (
-      prev: Record<string, Kind0Profile>,
-      found: Record<string, Kind0Profile>
-    ) => {
-      let changed = false;
-      const next = { ...prev };
-      for (const [pubkey, profile] of Object.entries(found)) {
-        if (prev[pubkey] === profile) continue;
-        next[pubkey] = profile;
-        changed = true;
-      }
-      return changed ? next : prev;
-    };
 
     const cached = readCachedKind0Profiles(pubkeys);
     if (Object.keys(cached).length > 0) {
@@ -476,6 +477,27 @@ export default function App() {
       cancelled = true;
     };
   }, [events]);
+
+  // Best-effort kind 0 for muted authors so Settings can show names even when
+  // they are not in the current feed. Cache paints instantly; relays are async.
+  useEffect(() => {
+    if (mutedAuthors.length === 0) return;
+
+    const cached = readCachedKind0Profiles(mutedAuthors);
+    if (Object.keys(cached).length > 0) {
+      setProfiles((prev) => mergeProfiles(prev, cached));
+    }
+
+    let cancelled = false;
+    void getKind0Profiles(mutedAuthors).then((found) => {
+      if (cancelled) return;
+      setProfiles((prev) => mergeProfiles(prev, found));
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [mutedAuthors]);
 
   return (
     <main className="page">
