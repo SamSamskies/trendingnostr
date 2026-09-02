@@ -42,6 +42,7 @@ export const ENGAGEMENT_QUERY_LIMIT = 400;
 
 /** Authors hidden from the trending feed (lowercase hex pubkeys). */
 const HIDDEN_AUTHOR_PUBKEYS = new Set([
+  "567b21e2a428a8f7b67aa03ec21cfa610fae2afc2df5a7513de0d4e69be2077d",
   "d71f47ad20f6a4b9363d8a319a539332e77980f8d52dee9a0073da36c4062369",
   "ae1bbe3a1fe798758b8c708d0b26538f3b9d8475a42e0b07720d1985223fd9fa",
 ]);
