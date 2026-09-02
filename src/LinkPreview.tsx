@@ -33,7 +33,14 @@ function loadPreview(url: string): Promise<LinkPreviewData | null> {
       if (!title && !description && !image) return null;
       return { url: finalUrl, title, description, image, domain };
     })
-    .catch(() => null);
+    .catch(() => null)
+    .then((data) => {
+      // Keep successful unfurls; drop misses/errors so a later remount can retry.
+      if (!data && previewCache.get(url) === pending) {
+        previewCache.delete(url);
+      }
+      return data;
+    });
 
   previewCache.set(url, pending);
   return pending;
