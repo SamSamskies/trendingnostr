@@ -1,4 +1,5 @@
 import { useEffect, useId, useRef } from "react";
+import { Avatar } from "./Avatar";
 import type { Kind0Profile } from "./identity";
 import { profileLabel } from "./mentions";
 import {
@@ -196,8 +197,11 @@ export function SettingsDialog({
               <ul className="settings-muted-list">
                 {mutedAuthors.map((pubkey) => (
                   <li key={pubkey} className="settings-muted-item">
-                    <span className="settings-muted-name">
-                      {profileLabel(pubkey, profiles[pubkey]?.displayName)}
+                    <span className="settings-muted-author">
+                      <Avatar src={profiles[pubkey]?.picture} />
+                      <span className="settings-muted-name">
+                        {profileLabel(pubkey, profiles[pubkey]?.displayName)}
+                      </span>
                     </span>
                     <button
                       type="button"

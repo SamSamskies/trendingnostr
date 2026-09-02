@@ -362,6 +362,18 @@ a.hero-action {
   border-top: 1px solid var(--line);
 }
 
+.settings-muted-author {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  min-width: 0;
+}
+
+.settings-muted-author .avatar {
+  width: 1.7rem;
+  height: 1.7rem;
+}
+
 .settings-muted-name {
   min-width: 0;
   overflow: hidden;
