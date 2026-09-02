@@ -29,6 +29,11 @@ function unloadedMediaExtraHeight(root: HTMLElement): number {
     extra += Math.max(0, (width * 16) / 9 - video.clientHeight);
   }
 
+  // Link-preview cards reserve ~100px; unfinished thumbnails shouldn't understate height.
+  for (const card of root.querySelectorAll<HTMLElement>(".note-link-preview")) {
+    extra += Math.max(0, 100 - card.clientHeight);
+  }
+
   return extra;
 }
 

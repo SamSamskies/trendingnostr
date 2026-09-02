@@ -15,6 +15,7 @@ import {
   parseNostrEntity,
 } from "./mentions";
 import { isSafeHttpUrl, type Kind0Profile } from "./identity";
+import { LinkPreview } from "./LinkPreview";
 import type { OpenInKind } from "./nostr-clients";
 
 const wavlakeRegex =
@@ -215,11 +216,7 @@ export const NoteContent = ({
         }
 
         if (part.match(hyperlinkRegex)) {
-          return (
-            <a key={index} href={url} target="_blank" rel="noreferrer">
-              {part}
-            </a>
-          );
+          return <LinkPreview key={index} url={url} label={part} />;
         }
 
         return <Fragment key={index}>{part}</Fragment>;
