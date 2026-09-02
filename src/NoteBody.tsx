@@ -34,9 +34,9 @@ function unloadedMediaExtraHeight(root: HTMLElement): number {
 
   // Link-preview / quote cards reserve space while loading so overflow is detected early.
   for (const card of root.querySelectorAll<HTMLElement>(
-    ".note-link-preview, .note-quote"
+    ".note-link-preview, .note-quote-loading"
   )) {
-    const minHeight = card.classList.contains("note-quote") ? 88 : 100;
+    const minHeight = card.classList.contains("note-quote-loading") ? 88 : 100;
     extra += Math.max(0, minHeight - card.clientHeight);
   }
 
