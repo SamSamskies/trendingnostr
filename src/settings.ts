@@ -13,12 +13,18 @@ export type AppSettings = {
   trendingHours: TrendingHours;
   /** Lowercase hex pubkeys hidden from the feed. */
   mutedAuthors: string[];
+  /**
+   * When true, hide authors missing from Fayan or below its percentile floor.
+   * Failures fall open (feed stays unfiltered).
+   */
+  fayanFilter: boolean;
 };
 
 const DEFAULT_SETTINGS: AppSettings = {
   webSearch: true,
   trendingHours: 48,
   mutedAuthors: [],
+  fayanFilter: true,
 };
 
 function normalizeMutedAuthors(raw: unknown): string[] {
@@ -64,6 +70,10 @@ function normalize(raw: unknown): AppSettings {
       ? record.trendingHours
       : DEFAULT_SETTINGS.trendingHours,
     mutedAuthors: normalizeMutedAuthors(record.mutedAuthors),
+    fayanFilter:
+      typeof record.fayanFilter === "boolean"
+        ? record.fayanFilter
+        : DEFAULT_SETTINGS.fayanFilter,
   };
 }
 
@@ -176,5 +186,23 @@ export function useMutedAuthors(): string[] {
     subscribe,
     getMutedAuthors,
     () => DEFAULT_SETTINGS.mutedAuthors
+  );
+}
+
+export function isFayanFilterEnabled(): boolean {
+  return readSettings().fayanFilter;
+}
+
+export function setFayanFilterEnabled(enabled: boolean): void {
+  const current = readSettings();
+  if (current.fayanFilter === enabled) return;
+  writeSettings({ ...current, fayanFilter: enabled });
+}
+
+export function useFayanFilterEnabled(): boolean {
+  return useSyncExternalStore(
+    subscribe,
+    isFayanFilterEnabled,
+    () => DEFAULT_SETTINGS.fayanFilter
   );
 }

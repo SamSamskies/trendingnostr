@@ -1,6 +1,10 @@
 import { SimplePool, type Event } from "nostr-tools";
 import { parseKind0Profile, type Kind0Profile } from "./identity";
-import type { TrendingHours } from "./settings";
+import {
+  fetchFayanUsers,
+  filterNotesByFayanReputation,
+} from "./fayan";
+import { isFayanFilterEnabled, type TrendingHours } from "./settings";
 
 export type LocatedEvent = Event & { seenOn: string[] };
 
@@ -578,14 +582,25 @@ async function toTrendingFeed(
   notes: LocatedEvent[],
   engagementById: Record<string, NoteEngagement>
 ): Promise<TrendingFeed> {
-  const [engagement, spamIds] = await Promise.all([
+  const fayanEnabled = isFayanFilterEnabled();
+  const [engagement, spamIds, fayanUsers] = await Promise.all([
     enrichEngagementFromRelays(notes, engagementById),
     fetchSpamReportedEventIds(notes.map((note) => note.id)),
+    fayanEnabled
+      ? fetchFayanUsers(notes.map((note) => note.pubkey))
+      : Promise.resolve(null),
   ]);
-  const visible =
+
+  let visible =
     spamIds.size === 0
       ? notes
       : notes.filter((note) => !spamIds.has(note.id.toLowerCase()));
+
+  // Fail open: only filter when Fayan returned a successful map.
+  if (fayanEnabled && fayanUsers) {
+    visible = filterNotesByFayanReputation(visible, fayanUsers);
+  }
+
   return {
     notes: rankTrendingNotes(visible, engagement),
     engagementById: engagement,
