@@ -366,7 +366,8 @@ export default function App() {
     !loading &&
     !error &&
     events.length > 0 &&
-    displayEvents.length === 0;
+    displayEvents.length === 0 &&
+    events.every((note) => mutedPubkeys.has(note.pubkey.toLowerCase()));
 
   const handleMuteAuthor = (pubkey: string) => {
     muteAuthor(pubkey);
