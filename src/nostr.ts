@@ -287,6 +287,58 @@ async function hydrateTrendingNotesFromWine(
   return toLocatedEvents(ordered, EVENT_HYDRATION_RELAYS);
 }
 
+const eventByIdCache = new Map<string, Promise<Event | null>>();
+
+/**
+ * Fetch a single kind-1 note by id for quote embeds. Merges optional NIP-19
+ * relay hints with the usual hydration relays. Module-level cache like link
+ * previews; misses are dropped so a remount can retry.
+ */
+export function fetchEventById(
+  id: string,
+  relayHints: readonly string[] = []
+): Promise<Event | null> {
+  const normalized = id.trim().toLowerCase();
+  if (!isEventId(normalized)) return Promise.resolve(null);
+
+  const existing = eventByIdCache.get(normalized);
+  if (existing) return existing;
+
+  const relays = [
+    ...EVENT_HYDRATION_RELAYS,
+    ...relayHints
+      .map((url) => url.replace(/\/+$/, ""))
+      .filter(
+        (url) =>
+          url.startsWith("wss://") &&
+          url !== "wss://relay.nostr.band" &&
+          !(EVENT_HYDRATION_RELAYS as readonly string[]).includes(url)
+      ),
+  ];
+
+  const pending = queryRelayOnce(relays, {
+    ids: [normalized],
+    kinds: [1],
+  })
+    .then(({ events }) => {
+      const match =
+        events.find((event) => event.id.toLowerCase() === normalized) ?? null;
+      if (!match && eventByIdCache.get(normalized) === pending) {
+        eventByIdCache.delete(normalized);
+      }
+      return match;
+    })
+    .catch(() => {
+      if (eventByIdCache.get(normalized) === pending) {
+        eventByIdCache.delete(normalized);
+      }
+      return null;
+    });
+
+  eventByIdCache.set(normalized, pending);
+  return pending;
+}
+
 function emptyEngagement(): NoteEngagement {
   return { reactions: 0, replies: 0, reposts: 0, zapAmount: 0 };
 }

@@ -32,9 +32,12 @@ function unloadedMediaExtraHeight(root: HTMLElement): number {
     extra += Math.max(0, (width * 16) / 9 - video.clientHeight);
   }
 
-  // Link-preview cards reserve ~100px; unfinished thumbnails shouldn't understate height.
-  for (const card of root.querySelectorAll<HTMLElement>(".note-link-preview")) {
-    extra += Math.max(0, 100 - card.clientHeight);
+  // Link-preview / quote cards reserve space while loading so overflow is detected early.
+  for (const card of root.querySelectorAll<HTMLElement>(
+    ".note-link-preview, .note-quote"
+  )) {
+    const minHeight = card.classList.contains("note-quote") ? 88 : 100;
+    extra += Math.max(0, minHeight - card.clientHeight);
   }
 
   return extra;
