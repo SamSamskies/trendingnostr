@@ -152,29 +152,128 @@ a.hero-action {
 }
 
 .settings-dialog {
-  width: min(22rem, calc(100vw - 2rem));
-  max-height: min(36rem, calc(100vh - 2rem));
-  overflow: auto;
-  margin: auto;
-  padding: 1.3rem 1.15rem 1.1rem;
-  border: 1px solid var(--line);
-  border-radius: 16px;
+  width: min(24rem, 100vw);
+  height: 100%;
+  max-width: none;
+  max-height: 100%;
+  margin: 0;
+  padding: 0;
+  border: none;
+  border-left: 3px solid var(--accent);
   background: var(--panel);
-  box-shadow: var(--shadow);
   color: var(--ink);
+  box-shadow: var(--shadow);
+  inset: 0 0 0 auto;
+}
+
+.settings-dialog[open] {
+  display: flex;
+  flex-direction: column;
+  animation: settings-drawer-in 0.42s cubic-bezier(0.32, 0.72, 0, 1) both;
+}
+
+.settings-dialog[open].is-closing {
+  pointer-events: none;
+  animation: settings-drawer-out 0.32s cubic-bezier(0.4, 0, 1, 1) both;
+}
+
+.settings-dialog:modal {
+  max-width: none;
+  max-height: 100%;
 }
 
 .settings-dialog::backdrop {
   background: rgba(28, 31, 24, 0.4);
 }
 
+.settings-dialog[open]::backdrop {
+  animation: settings-backdrop-in 0.38s ease both;
+}
+
+.settings-dialog[open].is-closing::backdrop {
+  animation: settings-backdrop-out 0.28s ease both;
+}
+
+@keyframes settings-drawer-in {
+  from {
+    transform: translate3d(100%, 0, 0);
+  }
+}
+
+@keyframes settings-drawer-out {
+  to {
+    transform: translate3d(100%, 0, 0);
+  }
+}
+
+@keyframes settings-backdrop-in {
+  from {
+    opacity: 0;
+  }
+}
+
+@keyframes settings-backdrop-out {
+  to {
+    opacity: 0;
+  }
+}
+
+.settings-sheet {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  width: 100%;
+  min-height: 0;
+}
+
+.settings-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 1rem 1rem 0.85rem;
+  border-bottom: 1px solid var(--line);
+}
+
 .settings-title {
-  margin: 0 0 1rem;
-  text-align: center;
+  margin: 0;
   font-family: var(--font-display);
   font-weight: 700;
   font-size: 1.35rem;
   letter-spacing: -0.03em;
+}
+
+.settings-close {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 2.15rem;
+  height: 2.15rem;
+  margin: 0;
+  padding: 0;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+}
+
+.settings-close:hover {
+  color: var(--ink);
+  background: var(--accent-soft);
+}
+
+.settings-close:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.settings-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 1rem 1rem 1.25rem;
 }
 
 .settings-row {
@@ -1458,6 +1557,15 @@ a.open-in-link:focus-visible,
     border-radius: 16px 16px 0 0;
   }
 
+  .settings-dialog {
+    inset: auto 0 0 0;
+    width: 100%;
+    height: min(85dvh, 42rem);
+    border-left: none;
+    border-top: 3px solid var(--accent);
+    border-radius: 16px 16px 0 0;
+  }
+
   @keyframes ask-ai-drawer-in {
     from {
       transform: translate3d(0, 100%, 0);
@@ -1465,6 +1573,18 @@ a.open-in-link:focus-visible,
   }
 
   @keyframes ask-ai-drawer-out {
+    to {
+      transform: translate3d(0, 100%, 0);
+    }
+  }
+
+  @keyframes settings-drawer-in {
+    from {
+      transform: translate3d(0, 100%, 0);
+    }
+  }
+
+  @keyframes settings-drawer-out {
     to {
       transform: translate3d(0, 100%, 0);
     }
