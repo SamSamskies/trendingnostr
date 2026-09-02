@@ -58,6 +58,15 @@ function filterHiddenAuthors(
   });
 }
 
+function visiblePageLength(eventCount: number, currentLength: number): number {
+  if (eventCount === 0) return 0;
+  const capped = Math.min(currentLength, eventCount);
+  if (capped < WINDOW_PAGE_SIZE) {
+    return Math.min(WINDOW_PAGE_SIZE, eventCount);
+  }
+  return capped;
+}
+
 /** Compact counts for engagement labels (e.g. 1.2k, 3.4M). */
 function formatEngagementCount(value: number): string {
   if (value < 1000) return String(value);
@@ -390,14 +399,9 @@ export default function App() {
   // After profiles arrive and spam authors drop out, clamp the window and
   // top up the first page so the feed does not look sparsely loaded.
   useEffect(() => {
-    setCurrentDataLength((prev) => {
-      if (displayEvents.length === 0) return 0;
-      const capped = Math.min(prev, displayEvents.length);
-      if (capped < WINDOW_PAGE_SIZE) {
-        return Math.min(WINDOW_PAGE_SIZE, displayEvents.length);
-      }
-      return capped;
-    });
+    setCurrentDataLength((prev) =>
+      visiblePageLength(displayEvents.length, prev)
+    );
   }, [displayEvents.length]);
 
   useEffect(() => {
@@ -416,7 +420,14 @@ export default function App() {
     return () => observer.disconnect();
   }, [currentDataLength, displayEvents.length]);
 
-  const visibleEvents = displayEvents.slice(0, currentDataLength);
+  const visibleEvents = useMemo(
+    () =>
+      displayEvents.slice(
+        0,
+        visiblePageLength(displayEvents.length, currentDataLength)
+      ),
+    [displayEvents, currentDataLength]
+  );
 
   // Prefetch authors + mentions for the full feed so scrolled-in notes already
   // have names/avatars (cache paints instantly; relays fill gaps in the background).
@@ -530,7 +541,7 @@ export default function App() {
         </>
       ) : null}
 
-      {!loading && (error || visibleEvents.length === 0) ? (
+      {!loading && (error || displayEvents.length === 0) ? (
         <div className="status status-error" role="status">
           <p>
             {error ??
