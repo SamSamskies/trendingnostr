@@ -83,19 +83,6 @@ function FallbackLink({
   );
 }
 
-function openQuotedNote(
-  event: { preventDefault: () => void },
-  code: string,
-  onOpen?: (kind: OpenInKind, code: string) => void
-) {
-  if (!onOpen) {
-    window.open(njumpHref(code), "_blank", "noopener,noreferrer");
-    return;
-  }
-  event.preventDefault();
-  onOpen("note", code);
-}
-
 /** Quote card body: media + embeds like notes; no nested quotes or link unfurls. */
 function QuoteBody({
   content,
@@ -359,40 +346,20 @@ export function QuotedNote({
   const href = njumpHref(noteRef.code);
 
   return (
-    <div
-      className="note-quote"
-      role="link"
-      tabIndex={0}
-      aria-label={`Quoted note by ${name}`}
-      data-href={href}
-      onClick={(event) => {
-        const target = event.target;
-        if (
-          target instanceof Element &&
-          target.closest(
-            "a, button, iframe, .note-embed, .note-image, .note-video, .note-media-grid"
-          )
-        ) {
-          return;
-        }
-        if (!isUnmodifiedLeftClick(event)) return;
-        openQuotedNote(event, noteRef.code, onOpen);
-      }}
-      onKeyDown={(event) => {
-        if (event.key !== "Enter" && event.key !== " ") return;
-        const target = event.target;
-        if (
-          target instanceof Element &&
-          target.closest(
-            "a, button, iframe, .note-embed, .note-image, .note-video, .note-media-grid"
-          )
-        ) {
-          return;
-        }
-        event.preventDefault();
-        openQuotedNote(event, noteRef.code, onOpen);
-      }}
-    >
+    <div className="note-quote">
+      <a
+        className="note-quote-hit"
+        href={href}
+        target="_blank"
+        rel="noreferrer"
+        aria-label={`Quoted note by ${name}`}
+        onClick={(event) => {
+          if (!onOpen) return;
+          if (!isUnmodifiedLeftClick(event)) return;
+          event.preventDefault();
+          onOpen("note", noteRef.code);
+        }}
+      />
       <div className="note-quote-author">
         <Avatar src={profile?.picture} />
         <span className="note-quote-author-copy">
