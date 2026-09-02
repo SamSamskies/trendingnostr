@@ -555,6 +555,10 @@ a.note-author-name:hover {
   color: var(--accent);
 }
 
+.note-body a.note-link-preview {
+  color: inherit;
+}
+
 .note-asking {
   border-color: rgba(180, 83, 9, 0.38);
   box-shadow:
@@ -674,6 +678,116 @@ a.note-author-name:hover {
 .note-embed {
   height: 380px;
   border: 0;
+}
+
+.note-link-preview {
+  display: flex;
+  align-items: stretch;
+  width: 100%;
+  max-width: 100%;
+  min-height: 100px;
+  margin: 0.7rem 0 0.2rem;
+  overflow: hidden;
+  text-decoration: none;
+  color: inherit;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  transition: border-color 0.15s ease;
+}
+
+a.note-link-preview:hover {
+  border-color: rgba(28, 31, 24, 0.22);
+  text-decoration: none;
+}
+
+.note-link-preview-thumb {
+  flex: none;
+  width: 120px;
+  height: 100px;
+  object-fit: cover;
+  background: var(--canvas);
+}
+
+.note-link-preview-thumb-empty {
+  display: block;
+  background: linear-gradient(
+    135deg,
+    var(--canvas) 0%,
+    rgba(28, 31, 24, 0.06) 100%
+  );
+}
+
+.note-link-preview-body {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  justify-content: center;
+  gap: 0.2rem;
+  min-width: 0;
+  padding: 0.7rem 0.85rem;
+}
+
+.note-link-preview-domain {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  color: var(--muted);
+  font-size: 0.78rem;
+  line-height: 1.2;
+}
+
+.note-link-preview-icon {
+  flex: none;
+  opacity: 0.7;
+}
+
+.note-link-preview-title {
+  display: -webkit-box;
+  overflow: hidden;
+  color: var(--ink);
+  font-size: 0.95rem;
+  font-weight: 650;
+  line-height: 1.3;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+.note-link-preview-description {
+  display: -webkit-box;
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 0.82rem;
+  line-height: 1.35;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+.note-link-preview-loading {
+  pointer-events: none;
+}
+
+.note-link-preview-skeleton {
+  display: block;
+  width: 88%;
+  height: 0.72rem;
+  border-radius: 4px;
+  background: rgba(28, 31, 24, 0.08);
+}
+
+.note-link-preview-skeleton-sm {
+  width: 36%;
+  height: 0.55rem;
+}
+
+.note-link-preview-skeleton-md {
+  width: 72%;
+}
+
+@media (max-width: 520px) {
+  .note-link-preview-thumb {
+    width: 88px;
+  }
 }
 
 .avatar {
