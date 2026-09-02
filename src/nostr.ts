@@ -690,8 +690,78 @@ async function toTrendingFeed(
   };
 }
 
+/** Prefer the CDN-cached `/api/trending` blob; null on miss / error. */
+async function fetchTrendingFeedFromApi(
+  hours: TrendingHours
+): Promise<TrendingFeed | null> {
+  const controller = new AbortController();
+  const timer = window.setTimeout(() => controller.abort(), 50_000);
+  try {
+    const response = await fetch(`/api/trending?hours=${hours}`, {
+      signal: controller.signal,
+      headers: { Accept: "application/json" },
+    });
+    if (!response.ok) return null;
+
+    const data: unknown = await response.json();
+    if (!data || typeof data !== "object") return null;
+    const record = data as {
+      notes?: unknown;
+      engagementById?: unknown;
+    };
+    if (!Array.isArray(record.notes)) return null;
+    if (
+      !record.engagementById ||
+      typeof record.engagementById !== "object" ||
+      Array.isArray(record.engagementById)
+    ) {
+      return null;
+    }
+
+    return {
+      notes: record.notes as LocatedEvent[],
+      engagementById: record.engagementById as Record<string, NoteEngagement>,
+    };
+  } catch {
+    return null;
+  } finally {
+    window.clearTimeout(timer);
+  }
+}
+
+/**
+ * Fayan / hashtag filters depend on local settings — apply after the shared
+ * server blob (which already ranked + spam-filtered).
+ */
+async function applyClientFeedFilters(
+  feed: TrendingFeed
+): Promise<TrendingFeed> {
+  let visible = feed.notes;
+
+  if (isHashtagFilterEnabled()) {
+    visible = filterExcessHashtagNotes(visible);
+  }
+
+  if (isFayanFilterEnabled()) {
+    const fayanUsers = await fetchFayanUsers(
+      visible.map((note) => note.pubkey)
+    );
+    if (fayanUsers) {
+      visible = filterNotesByFayanReputation(visible, fayanUsers);
+    }
+  }
+
+  return {
+    notes: visible,
+    engagementById: feed.engagementById,
+  };
+}
+
 /**
  * Fetch trending kind 1 notes for the given window.
+ *
+ * Prefers the CDN-cached `/api/trending` blob (warmed by cron). Falls back to
+ * the legacy browser path when the API is unavailable (plain Vite, cold fail).
  *
  * For the relay-aligned window (48h): trending relay candidates, re-ranked with
  * wine engagement + age decay. On rate-limit / connect failure, falls back to
@@ -703,6 +773,11 @@ async function toTrendingFeed(
 export async function fetchTrendingFeed(
   hours: TrendingHours = RELAY_ALIGNED_TRENDING_HOURS
 ): Promise<TrendingFeed> {
+  const cached = await fetchTrendingFeedFromApi(hours);
+  if (cached) {
+    return applyClientFeedFilters(cached);
+  }
+
   if (hours !== RELAY_ALIGNED_TRENDING_HOURS) {
     return fetchTrendingFeedFromWine(hours);
   }

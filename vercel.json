@@ -1,1 +1,7 @@
-{}
+{
+  "functions": {
+    "api/trending.js": {
+      "maxDuration": 60
+    }
+  }
+}

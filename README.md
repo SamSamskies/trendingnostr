@@ -40,3 +40,39 @@ npm run build
 Static output lands in `dist/`. For Vercel: build command `npm run build`, output directory `dist`. Set `INFERENCE_API_KEY` in the Vercel project env.
 
 The public endpoint is `/api/inference`. The current implementation calls Gemini with Gemma 4 31B; swap the body of `api/inference.ts` to change providers without renaming the route or client.
+
+## Cached trending feed
+
+`/api/trending?hours=48` builds the ranked feed on the server and sets CDN cache headers (`s-maxage=300`). The browser prefers this blob and falls back to the legacy client-side path if the API is down.
+
+### Mac Mini cache warmer
+
+Keep the production CDN warm from a Mac that stays awake:
+
+```sh
+npm run cron:prod:run     # warm once
+npm run cron:prod:start   # launchd every 5 minutes
+npm run cron:status
+npm run cron:logs         # last 50 lines
+npm run cron:logs -- -f
+npm run cron:stats
+npm run cron:stop
+```
+
+For a preview or other host: `TRENDING_CRON_BASE_URL=https://… npm run cron:run` (and `cron:start`).
+
+Logs: `~/Library/Logs/trendingnostr/warm.jsonl`. Optional: `TRENDING_CRON_HOURS`, `TRENDING_CRON_INTERVAL_SEC`.
+
+Protected **preview** deploys return `401 Protected Deployment`. Either:
+
+1. Open the preview in a browser while logged into Vercel (cookie auth), or
+2. Set a [Protection Bypass for Automation](https://vercel.com/docs/deployment-protection/methods-to-bypass-deployment-protection/protection-bypass-automation) secret and pass it to the warmer:
+
+```sh
+export TRENDING_CRON_BYPASS_SECRET="your-bypass-secret"
+npm run cron:run
+```
+
+Or use the CLI (uses your Vercel login): `npx vercel curl "$BASE/api/trending?hours=48"`.
+
+Production is usually unprotected; the Mac Mini cron does not need a bypass there.

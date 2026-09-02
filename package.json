@@ -16,7 +16,15 @@
     "dev": "vite",
     "dev:vercel": "vercel dev",
     "build": "tsc && vite build",
-    "serve": "vite preview"
+    "serve": "vite preview",
+    "cron:start": "./scripts/trending-cron.sh start",
+    "cron:stop": "./scripts/trending-cron.sh stop",
+    "cron:status": "./scripts/trending-cron.sh status",
+    "cron:logs": "./scripts/trending-cron.sh logs",
+    "cron:stats": "./scripts/trending-cron.sh stats",
+    "cron:run": "./scripts/trending-cron.sh run",
+    "cron:prod:start": "TRENDING_CRON_BASE_URL=https://trendingnostr.vercel.app ./scripts/trending-cron.sh start",
+    "cron:prod:run": "TRENDING_CRON_BASE_URL=https://trendingnostr.vercel.app ./scripts/trending-cron.sh run"
   },
   "devDependencies": {
     "@types/react": "19.2.18",
