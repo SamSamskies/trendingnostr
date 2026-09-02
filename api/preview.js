@@ -4,7 +4,7 @@
  */
 
 import { applyCors, originAllowed } from "../lib/http.js";
-import { assertSafeFetchUrl } from "../lib/safeUrl.js";
+import { assertSafeFetchUrl, pinnedFetch } from "../lib/safeUrl.js";
 
 const MAX_REDIRECTS = 5;
 const MAX_HTML_BYTES = 1_000_000;
@@ -67,7 +67,7 @@ async function resolveImageUrl(image, pageUrl) {
   if (!image) return null;
   try {
     const resolved = await assertSafeFetchUrl(image, pageUrl);
-    return resolved.href;
+    return resolved.url.href;
   } catch {
     return null;
   }
@@ -120,9 +120,8 @@ async function fetchHtml(targetUrl) {
 
   try {
     for (let hop = 0; hop <= MAX_REDIRECTS; hop++) {
-      const res = await fetch(current.href, {
-        method: "GET",
-        redirect: "manual",
+      // Connect to the address from assertSafeFetchUrl — do not re-resolve DNS.
+      const res = await pinnedFetch(current, {
         signal: controller.signal,
         headers: {
           Accept: "text/html,application/xhtml+xml;q=0.9,*/*;q=0.8",
@@ -133,7 +132,7 @@ async function fetchHtml(targetUrl) {
       if (res.status >= 300 && res.status < 400) {
         const location = res.headers.get("location");
         if (!location) throw new Error("redirect");
-        current = await assertSafeFetchUrl(location, current.href);
+        current = await assertSafeFetchUrl(location, current.url.href);
         continue;
       }
 
@@ -150,7 +149,7 @@ async function fetchHtml(targetUrl) {
       }
 
       const html = await readBodyLimited(res, MAX_HTML_BYTES);
-      return { html, finalUrl: current.href };
+      return { html, finalUrl: current.url.href };
     }
 
     throw new Error("too_many_redirects");
@@ -228,7 +227,7 @@ export default async function handler(req, res) {
   }
 
   try {
-    const { html, finalUrl } = await fetchHtml(target.href);
+    const { html, finalUrl } = await fetchHtml(target.url.href);
     const preview = await parsePreview(html, finalUrl);
 
     if (!preview.title && !preview.description && !preview.image) {
