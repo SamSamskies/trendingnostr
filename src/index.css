@@ -670,8 +670,113 @@ a.note-author-name:hover {
   color: var(--accent);
 }
 
-.note-body a.note-link-preview {
+.note-body a.note-link-preview,
+.note-body .note-quote {
   color: inherit;
+}
+
+.note-quote {
+  position: relative;
+  display: block;
+  margin: 0.65rem 0;
+  padding: 0.75rem 0.85rem;
+  border: 1px solid var(--line);
+  border-radius: calc(var(--radius) - 4px);
+  background: rgba(28, 31, 24, 0.03);
+  cursor: pointer;
+  text-decoration: none;
+  transition: border-color 0.15s ease, background 0.15s ease;
+}
+
+.note-quote:hover {
+  border-color: rgba(180, 83, 9, 0.35);
+  background: var(--accent-soft);
+}
+
+.note-quote-hit {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  border-radius: inherit;
+  color: inherit;
+  text-decoration: none;
+}
+
+.note-quote-hit:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.note-quote-author,
+.note-quote-content {
+  position: relative;
+  z-index: 0;
+  pointer-events: none;
+}
+
+.note-quote-content
+  :is(a, button, iframe, .note-embed, .note-image, .note-video, .note-media-grid) {
+  position: relative;
+  z-index: 1;
+  pointer-events: auto;
+}
+
+.note-quote-author {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  min-width: 0;
+  margin: 0 0 0.55rem;
+}
+
+.note-quote-author .avatar,
+.note-quote-author .avatar-empty {
+  width: 1.55rem;
+  height: 1.55rem;
+}
+
+.note-quote-author-copy {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.08rem;
+}
+
+.note-quote-author-name {
+  min-width: 0;
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: 0.88rem;
+  letter-spacing: -0.02em;
+  line-height: 1.25;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.note-quote time {
+  display: block;
+  font-family: var(--font-mono);
+  font-size: 0.68rem;
+  color: var(--muted);
+}
+
+.note-quote-content {
+  display: block;
+  font-size: 0.95rem;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+
+.note-quote-loading {
+  pointer-events: none;
+  cursor: default;
+}
+
+.note-quote-skeleton-lines {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
 }
 
 .note-asking {

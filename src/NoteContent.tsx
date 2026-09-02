@@ -16,11 +16,9 @@ import {
 } from "./mentions";
 import { isSafeHttpUrl, type Kind0Profile } from "./identity";
 import { LinkPreview } from "./LinkPreview";
-import {
-  MediaGrid,
-  type NoteMediaItem,
-} from "./MediaGrid";
+import { coalesceMedia, type NoteContentToken } from "./noteMedia";
 import type { OpenInKind } from "./nostr-clients";
+import { QuotedNote } from "./QuotedNote";
 
 const wavlakeRegex =
   /(https?:\/\/(?:player\.|www\.)?wavlake\.com\/(?!top|new|artists|account|activity|login|preferences|feed|profile|shows)(?:(?:track|album)\/[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}|[a-z-]+))/gi;
@@ -72,89 +70,36 @@ function CustomEmoji({
   );
 }
 
-function renderStandaloneMedia(item: NoteMediaItem, key: number): ReactNode {
-  if (item.kind === "image") {
-    return (
-      <img
-        key={key}
-        className="note-image"
-        src={item.url}
-        alt=""
-        loading="lazy"
-      />
-    );
-  }
-
-  return (
-    <video key={key} className="note-video" src={item.url} controls>
-      {item.url}
-    </video>
-  );
-}
-
-type ContentToken =
-  | { type: "media"; item: NoteMediaItem; key: number }
-  /** Newlines or whitespace-only text — keep unless between consecutive media. */
-  | { type: "ws"; node: ReactNode }
-  | { type: "node"; node: ReactNode };
-
-function peekNonWs(
-  tokens: ContentToken[],
-  from: number
-): ContentToken | undefined {
-  for (let i = from; i < tokens.length; i++) {
-    if (tokens[i].type !== "ws") return tokens[i];
-  }
-  return undefined;
-}
-
-/**
- * Consecutive image/video URLs separated only by whitespace or newlines become
- * one media grid. Embeds, link previews, and text keep media groups apart.
- */
-function coalesceMedia(tokens: ContentToken[]): ReactNode[] {
-  const nodes: ReactNode[] = [];
-  let index = 0;
-
-  while (index < tokens.length) {
-    const token = tokens[index];
-
-    if (token.type === "media") {
-      const items: NoteMediaItem[] = [];
-      const keys: number[] = [];
-
-      while (index < tokens.length) {
-        const current = tokens[index];
-        if (current.type === "media") {
-          items.push(current.item);
-          keys.push(current.key);
-          index++;
-          continue;
-        }
-        if (
-          current.type === "ws" &&
-          peekNonWs(tokens, index + 1)?.type === "media"
-        ) {
-          // Drop interstitial whitespace/newlines between media.
-          index++;
-          continue;
-        }
-        break;
-      }
-
-      if (items.length >= 2) {
-        nodes.push(<MediaGrid key={`media-grid-${keys[0]}`} items={items} />);
-      } else {
-        nodes.push(renderStandaloneMedia(items[0], keys[0]));
-      }
-      continue;
-    }
-
-    nodes.push(token.node);
-    index++;
-  }
-
-  return nodes;
+function entityLink(
+  index: number,
+  kind: OpenInKind,
+  code: string,
+  label: string,
+  className: string | undefined,
+  title: string,
+  onOpen?: (kind: OpenInKind, code: string) => void
+): NoteContentToken {
+  return {
+    type: "node",
+    node: (
+      <a
+        key={index}
+        className={className}
+        href={njumpHref(code)}
+        target="_blank"
+        rel="noreferrer"
+        title={title}
+        onClick={(event) => {
+          if (!onOpen) return;
+          if (!isUnmodifiedLeftClick(event)) return;
+          event.preventDefault();
+          onOpen(kind, code);
+        }}
+      >
+        {label}
+      </a>
+    ),
+  };
 }
 
 function classifyPart(
@@ -164,7 +109,7 @@ function classifyPart(
   emojis: Map<string, string>,
   profiles: Record<string, Kind0Profile>,
   onOpen?: (kind: OpenInKind, code: string) => void
-): ContentToken | null {
+): NoteContentToken | null {
   if (part === undefined || part === "") {
     return null;
   }
@@ -192,27 +137,33 @@ function classifyPart(
           ? entity.code
           : noteRefLabel(entity.code);
 
-    return {
-      type: "node",
-      node: (
-        <a
-          key={index}
-          className={entity.type === "address" ? undefined : "note-mention"}
-          href={njumpHref(entity.code)}
-          target="_blank"
-          rel="noreferrer"
-          title={part}
-          onClick={(event) => {
-            if (!onOpen) return;
-            if (!isUnmodifiedLeftClick(event)) return;
-            event.preventDefault();
-            onOpen(kind, entity.code);
-          }}
-        >
-          {label}
-        </a>
-      ),
-    };
+    // Embed kind-1 note/nevent refs as compact quote cards.
+    if (
+      entity.type === "note" &&
+      (entity.kind === undefined || entity.kind === 1)
+    ) {
+      return {
+        type: "node",
+        node: (
+          <QuotedNote
+            key={index}
+            noteRef={entity}
+            profiles={profiles}
+            onOpen={onOpen}
+          />
+        ),
+      };
+    }
+
+    return entityLink(
+      index,
+      kind,
+      entity.code,
+      label,
+      entity.type === "address" ? undefined : "note-mention",
+      part,
+      onOpen
+    );
   }
 
   if (/^https?:\/\//i.test(part)) {
@@ -318,7 +269,7 @@ export const NoteContent = ({
     )
   );
 
-  const tokens: ContentToken[] = [];
+  const tokens: NoteContentToken[] = [];
   for (let index = 0; index < parts.length; index++) {
     const token = classifyPart(
       parts[index],

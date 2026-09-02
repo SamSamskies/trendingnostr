@@ -17,6 +17,10 @@ export type Mention = {
 export type NoteRef = {
   type: "note";
   code: string;
+  id: string;
+  author?: string;
+  kind?: number;
+  relayHints: string[];
 };
 
 export type AddressRef = {
@@ -37,6 +41,19 @@ export type MentionIdentity = {
 
 function stripNostrPrefix(raw: string): string {
   return raw.toLowerCase().startsWith("nostr:") ? raw.slice(6) : raw;
+}
+
+/** Normalize relay hints; drop dead `relay.nostr.band`. */
+export function sanitizeRelayHints(relays: readonly string[] | undefined): string[] {
+  if (!relays?.length) return [];
+  const out: string[] = [];
+  for (const raw of relays) {
+    const url = raw.replace(/\/+$/, "");
+    if (!url.startsWith("wss://")) continue;
+    if (url === "wss://relay.nostr.band") continue;
+    if (!out.includes(url)) out.push(url);
+  }
+  return out;
 }
 
 export function parseNostrEntity(raw: string): NostrEntity | null {
@@ -60,13 +77,26 @@ export function parseNostrEntity(raw: string): NostrEntity | null {
         type: "profile",
         code,
         pubkey: decoded.data.pubkey.toLowerCase(),
-        relayHints: (decoded.data.relays ?? [])
-          .map((url) => url.replace(/\/+$/, ""))
-          .filter((url) => url.startsWith("wss://")),
+        relayHints: sanitizeRelayHints(decoded.data.relays),
       };
     }
-    if (decoded.type === "note" || decoded.type === "nevent") {
-      return { type: "note", code };
+    if (decoded.type === "note") {
+      return {
+        type: "note",
+        code,
+        id: decoded.data.toLowerCase(),
+        relayHints: [],
+      };
+    }
+    if (decoded.type === "nevent") {
+      return {
+        type: "note",
+        code,
+        id: decoded.data.id.toLowerCase(),
+        author: decoded.data.author?.toLowerCase(),
+        kind: decoded.data.kind,
+        relayHints: sanitizeRelayHints(decoded.data.relays),
+      };
     }
     if (decoded.type === "naddr") {
       return {
@@ -75,9 +105,7 @@ export function parseNostrEntity(raw: string): NostrEntity | null {
         kind: decoded.data.kind,
         pubkey: decoded.data.pubkey.toLowerCase(),
         identifier: decoded.data.identifier,
-        relayHints: (decoded.data.relays ?? [])
-          .map((url) => url.replace(/\/+$/, ""))
-          .filter((url) => url.startsWith("wss://")),
+        relayHints: sanitizeRelayHints(decoded.data.relays),
       };
     }
   } catch {
