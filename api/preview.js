@@ -63,10 +63,10 @@ function htmlTitle(html) {
   return match?.[1] ? decodeEntities(match[1]) : null;
 }
 
-function resolveImageUrl(image, pageUrl) {
+async function resolveImageUrl(image, pageUrl) {
   if (!image) return null;
   try {
-    const resolved = assertSafeFetchUrl(image, pageUrl);
+    const resolved = await assertSafeFetchUrl(image, pageUrl);
     return resolved.href;
   } catch {
     return null;
@@ -114,7 +114,7 @@ async function readBodyLimited(res, maxBytes) {
 }
 
 async function fetchHtml(targetUrl) {
-  let current = assertSafeFetchUrl(targetUrl);
+  let current = await assertSafeFetchUrl(targetUrl);
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
 
@@ -133,7 +133,7 @@ async function fetchHtml(targetUrl) {
       if (res.status >= 300 && res.status < 400) {
         const location = res.headers.get("location");
         if (!location) throw new Error("redirect");
-        current = assertSafeFetchUrl(location, current.href);
+        current = await assertSafeFetchUrl(location, current.href);
         continue;
       }
 
@@ -159,7 +159,7 @@ async function fetchHtml(targetUrl) {
   }
 }
 
-function parsePreview(html, finalUrl) {
+async function parsePreview(html, finalUrl) {
   const title =
     metaContent(html, ["og:title", "twitter:title"]) || htmlTitle(html);
   const description = metaContent(html, [
@@ -168,7 +168,7 @@ function parsePreview(html, finalUrl) {
     "description",
   ]);
   const imageRaw = metaContent(html, ["og:image", "twitter:image"]);
-  const image = resolveImageUrl(imageRaw, finalUrl);
+  const image = await resolveImageUrl(imageRaw, finalUrl);
 
   let domain = null;
   try {
@@ -221,7 +221,7 @@ export default async function handler(req, res) {
 
   let target;
   try {
-    target = assertSafeFetchUrl(rawUrl);
+    target = await assertSafeFetchUrl(rawUrl);
   } catch {
     res.status(400).json({ error: "invalid_url" });
     return;
@@ -229,7 +229,7 @@ export default async function handler(req, res) {
 
   try {
     const { html, finalUrl } = await fetchHtml(target.href);
-    const preview = parsePreview(html, finalUrl);
+    const preview = await parsePreview(html, finalUrl);
 
     if (!preview.title && !preview.description && !preview.image) {
       res.setHeader("Cache-Control", "public, s-maxage=300");
