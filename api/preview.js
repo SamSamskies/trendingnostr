@@ -113,6 +113,14 @@ async function readBodyLimited(res, maxBytes) {
   return new TextDecoder("utf-8").decode(merged);
 }
 
+async function discardBody(res) {
+  try {
+    await res.body?.cancel?.();
+  } catch {
+    // ignore — best-effort teardown
+  }
+}
+
 async function fetchHtml(targetUrl) {
   let current = await assertSafeFetchUrl(targetUrl);
   const controller = new AbortController();
@@ -131,12 +139,16 @@ async function fetchHtml(targetUrl) {
 
       if (res.status >= 300 && res.status < 400) {
         const location = res.headers.get("location");
+        await discardBody(res);
         if (!location) throw new Error("redirect");
         current = await assertSafeFetchUrl(location, current.url.href);
         continue;
       }
 
-      if (!res.ok) throw new Error(`http_${res.status}`);
+      if (!res.ok) {
+        await discardBody(res);
+        throw new Error(`http_${res.status}`);
+      }
 
       const contentType = (res.headers.get("content-type") || "").toLowerCase();
       if (
@@ -145,6 +157,7 @@ async function fetchHtml(targetUrl) {
         !contentType.includes("application/xhtml") &&
         !contentType.includes("text/plain")
       ) {
+        await discardBody(res);
         throw new Error("not_html");
       }
 
