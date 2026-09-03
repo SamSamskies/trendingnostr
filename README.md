@@ -48,7 +48,7 @@ The public endpoint is `/api/inference`. The current implementation calls Gemini
 1. **Vercel Runtime Cache** (per region) — shared across `Accept-Encoding` variants. Cron refreshes this so a CDN miss still returns the prebuilt JSON in milliseconds (`X-Trending-Cache: runtime`).
 2. **CDN** (`s-maxage=300`) plus browser `max-age=60` — faster when the encoding matches, but Vercel keys CDN entries by `Accept-Encoding`, so bare `curl` and Chrome (`br`/`zstd`) are different keys.
 
-The Mac Mini cron warms both layers (browser-like `Accept-Encoding` + `x-trending-refresh` to force a rebuild into Runtime Cache). A first visit will still show a network `200` (CDN may be `MISS` or `HIT`); look at `X-Trending-Cache` and Time, not “from disk cache”. The browser prefers this blob and falls back to the legacy client-side path if the API is down.
+The Mac Mini cron rebuilds Runtime Cache via a distinct URL key (`&_warm=1` + `x-trending-refresh`; `Pragma: no-cache` does not bypass a fresh CDN HIT), then warms the public CDN entry. A first visit will still show a network `200` (CDN may be `MISS` or `HIT`); look at `X-Trending-Cache` and Time, not “from disk cache”. The browser prefers this blob and falls back to the legacy client-side path if the API is down.
 
 ### Mac Mini cache warmer
 

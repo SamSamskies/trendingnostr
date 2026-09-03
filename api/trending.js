@@ -8,6 +8,10 @@
  *    and Chrome (br/zstd) are different keys
  * 3. Runtime Cache — shared per region across encodings; cron refreshes it so
  *    a CDN miss still returns the prebuilt feed in milliseconds
+ *
+ * Cron cannot rely on Pragma/Cache-Control: no-cache to reach the function
+ * while s-maxage is fresh. It hits `?_warm=1` + x-trending-refresh (distinct
+ * CDN key, no-store response) then warms the public URL.
  */
 
 import { getCache } from "@vercel/functions";
@@ -58,8 +62,9 @@ function setTrendingCors(res, req) {
   // Public JSON body is identical for every caller. Use * so we do not
   // fragment the CDN on Origin (cron has none; browsers often send one).
   res.setHeader("Access-Control-Allow-Origin", "*");
-  // Vercel already keys by Accept-Encoding; keep Vary honest for intermediaries.
-  res.setHeader("Vary", "Accept-Encoding");
+  // Accept-Encoding: Vercel already keys by it. x-trending-refresh: keep
+  // cron rebuilds off the browser CDN entry (Pragma/no-cache will not).
+  res.setHeader("Vary", `Accept-Encoding, ${REFRESH_HEADER}`);
 }
 
 function setTrendingCache(res) {
@@ -149,7 +154,9 @@ export default async function handler(req, res) {
     const refresh = wantsRefresh(req);
     const { feed, layer } = await getOrBuildFeed(hours, refresh);
     setTrendingCors(res, req);
-    setTrendingCache(res);
+    // Refresh responses must not land in CDN under the browser key.
+    if (refresh) setNoStore(res);
+    else setTrendingCache(res);
     res.setHeader("X-Trending-Source", feed.source);
     res.setHeader("X-Trending-Duration-Ms", String(feed.durationMs));
     res.setHeader("X-Trending-Note-Count", String(feed.notes.length));
