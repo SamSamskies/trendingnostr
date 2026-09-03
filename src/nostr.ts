@@ -56,6 +56,8 @@ const HIDDEN_AUTHOR_PUBKEYS = new Set([
   "567b21e2a428a8f7b67aa03ec21cfa610fae2afc2df5a7513de0d4e69be2077d",
   "d71f47ad20f6a4b9363d8a319a539332e77980f8d52dee9a0073da36c4062369",
   "ae1bbe3a1fe798758b8c708d0b26538f3b9d8475a42e0b07720d1985223fd9fa",
+  // Constitute / zone_presence gateway telemetry spam
+  "0f92c4a4aab613ff051f2a6e9cde7d0d131faa576a11ffe175ab82b4715c501b",
 ]);
 
 /**
