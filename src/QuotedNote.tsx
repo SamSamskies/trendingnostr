@@ -1,6 +1,6 @@
 import { Fragment, useEffect, useState } from "react";
 import { Avatar } from "./Avatar";
-import { isSafeHttpUrl, type Kind0Profile } from "./identity";
+import { encodeNpub, isSafeHttpUrl, type Kind0Profile } from "./identity";
 import {
   classifyUrl,
   hyperlinkRegex,
@@ -343,27 +343,33 @@ export function QuotedNote({
   const { content, tags, pubkey, createdAt } = status;
   const profile = profiles[pubkey] ?? status.profile;
   const name = profileLabel(pubkey, profile?.displayName);
-  const href = njumpHref(noteRef.code);
+  const npub = encodeNpub(pubkey);
+
+  const nameEl = npub ? (
+    <a
+      className="note-quote-author-name"
+      href={njumpHref(npub)}
+      target="_blank"
+      rel="noreferrer"
+      onClick={(event) => {
+        if (!onOpen) return;
+        if (!isUnmodifiedLeftClick(event)) return;
+        event.preventDefault();
+        onOpen("profile", npub);
+      }}
+    >
+      {name}
+    </a>
+  ) : (
+    <span className="note-quote-author-name">{name}</span>
+  );
 
   return (
     <div className="note-quote">
-      <a
-        className="note-quote-hit"
-        href={href}
-        target="_blank"
-        rel="noreferrer"
-        aria-label={`Quoted note by ${name}`}
-        onClick={(event) => {
-          if (!onOpen) return;
-          if (!isUnmodifiedLeftClick(event)) return;
-          event.preventDefault();
-          onOpen("note", noteRef.code);
-        }}
-      />
       <div className="note-quote-author">
         <Avatar src={profile?.picture} />
         <span className="note-quote-author-copy">
-          <span className="note-quote-author-name">{name}</span>
+          {nameEl}
           <time dateTime={new Date(createdAt * 1000).toISOString()}>
             {formatCreateAtDate(createdAt)}
           </time>
