@@ -119,6 +119,15 @@ function filterExcessHashtagNotes<T extends { tags: string[][] }>(
   return notes.filter((note) => countHashtagTags(note.tags) <= MAX_HASHTAG_TAGS);
 }
 
+/** Blank / whitespace-only kind 1 bodies — common spam; media notes put URLs in content. */
+function hasNoteContent(note: { content: string }): boolean {
+  return note.content.trim().length > 0;
+}
+
+function filterEmptyContentNotes<T extends { content: string }>(notes: T[]): T[] {
+  return notes.filter(hasNoteContent);
+}
+
 function isRateLimitedCloseReason(reason: string): boolean {
   return /rate[-_ ]?limited/i.test(reason);
 }
@@ -737,15 +746,16 @@ async function toTrendingFeed(
   notes: LocatedEvent[],
   engagementById: Record<string, NoteEngagement>
 ): Promise<TrendingFeedResult> {
+  const withContent = filterEmptyContentNotes(notes);
   const [engagement, spamIds] = await Promise.all([
-    enrichEngagementFromRelays(notes, engagementById),
-    fetchSpamReportedEventIds(notes.map((note) => note.id)),
+    enrichEngagementFromRelays(withContent, engagementById),
+    fetchSpamReportedEventIds(withContent.map((note) => note.id)),
   ]);
 
   let visible =
     spamIds.size === 0
-      ? notes
-      : notes.filter((note) => !spamIds.has(note.id.toLowerCase()));
+      ? withContent
+      : withContent.filter((note) => !spamIds.has(note.id.toLowerCase()));
 
   if (isHashtagFilterEnabled()) {
     visible = filterExcessHashtagNotes(visible);
@@ -807,7 +817,8 @@ async function fetchTrendingFeedFromApi(
 async function applyClientFeedFilters(
   feed: TrendingFeed
 ): Promise<TrendingFeedResult> {
-  let visible = feed.notes;
+  // Also drop empties on the API path so stale CDN blobs clear immediately.
+  let visible = filterEmptyContentNotes(feed.notes);
 
   if (isHashtagFilterEnabled()) {
     visible = filterExcessHashtagNotes(visible);
