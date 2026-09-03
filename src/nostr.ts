@@ -40,7 +40,7 @@ export const EVENT_HYDRATION_RELAYS = [
 
 export const PROFILE_RELAYS = [
   "wss://relay.vertexlab.io",
-  "wss://purplepag.es",
+  "wss://relay.primal.net",
 ] as const;
 
 /** Same relays as event hydration — used to count engagement when wine lacks a note. */
@@ -1074,7 +1074,7 @@ export function readCachedKind0Profiles(
 }
 
 /**
- * Load kind 0 profiles from Vertex + purplepag.es in parallel; keep newest
+ * Load kind 0 profiles from Vertex + Primal in parallel; keep newest
  * per pubkey. Serves localStorage/memory cache first and only queries relays
  * for missing or stale pubkeys.
  */

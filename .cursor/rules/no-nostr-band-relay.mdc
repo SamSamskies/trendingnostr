@@ -7,7 +7,7 @@ alwaysApply: true
 
 `wss://relay.nostr.band` is a dead relay. Never add it to hardcoded lists, fallbacks, naddr/nprofile hint handling, or ad-hoc queries.
 
-Prefer relays this app already uses (`wss://relay.damus.io`, `wss://relay.primal.net`, `wss://relay.ditto.pub`, `wss://purplepag.es`, `wss://relay.vertexlab.io`).
+Prefer relays this app already uses (`wss://relay.damus.io`, `wss://relay.primal.net`, `wss://relay.ditto.pub`, `wss://relay.vertexlab.io`).
 
 ```ts
 // ❌ BAD
