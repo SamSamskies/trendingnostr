@@ -1,0 +1,26 @@
+---
+description: Ban/hide spam pubkeys via HIDDEN_AUTHOR_PUBKEYS (not a new block list)
+alwaysApply: true
+---
+
+# Hide spam authors with HIDDEN_AUTHOR_PUBKEYS
+
+When asked to ban, block, or hide a pubkey from the trending feed, **append it to the existing `HIDDEN_AUTHOR_PUBKEYS` sets**. Do not invent a new block list, and do not use Settings mutes (`mutedAuthors`) for global bans.
+
+## Required (keep both in sync)
+
+```ts
+// src/nostr.ts
+const HIDDEN_AUTHOR_PUBKEYS = new Set([/* ... */, "lowercase-hex-pubkey"]);
+
+// lib/trendingFeed.js  (server trending blob — same keys)
+const HIDDEN_AUTHOR_PUBKEYS = new Set([/* ... */, "lowercase-hex-pubkey"]);
+```
+
+Lowercase hex only. Applied in `toLocatedEvents` before ranking.
+
+## Do not
+
+- Add `BLOCKED_PUBKEYS` (or similar) in `identity.ts` — that file is for nip-05 hosts / display names only
+- Mute via `muteAuthor` / Settings for a site-wide ban
+- Update only one of `src/nostr.ts` or `lib/trendingFeed.js`
