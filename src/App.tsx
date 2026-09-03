@@ -486,7 +486,9 @@ export default function App() {
       if (!gate?.hasMore() || fayanBusy) return;
 
       setFayanBusy(true);
-      const want = displayEvents.length + WINDOW_PAGE_SIZE;
+      // Target Fayan-approved count (pre-mute/block), not displayEvents —
+      // otherwise muted notes already satisfy the target and no new waves run.
+      const want = events.length + WINDOW_PAGE_SIZE;
       void gate.ensureRevealed(want).then((notes) => {
         if (fayanRevealRef.current !== gate) return;
         setEvents(notes);
@@ -507,6 +509,7 @@ export default function App() {
     error,
     currentDataLength,
     displayEvents.length,
+    events.length,
     fayanHasMore,
     fayanBusy,
   ]);
