@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Mac Mini helper: warm Vercel CDN cache for /api/trending every N minutes.
+# Mac Mini helper: refresh Runtime Cache + warm CDN for /api/trending every N minutes.
 #
 # Usage:
 #   export TRENDING_CRON_BASE_URL="https://your-app.vercel.app"
@@ -18,6 +18,8 @@
 #   TRENDING_CRON_TIMEOUT_SEC=90
 #   TRENDING_CRON_BYPASS_SECRET=...  # Vercel "Protection Bypass for Automation"
 #                                   # (needed for protected preview deploys)
+#   TRENDING_WARM_SECRET=...        # must match Vercel env if set; forces rebuild
+#                                   # into Runtime Cache (bypasses CDN HIT)
 
 set -euo pipefail
 
@@ -37,6 +39,10 @@ TIMEOUT_SEC="${TRENDING_CRON_TIMEOUT_SEC:-$DEFAULT_TIMEOUT}"
 LOG_DIR="${TRENDING_CRON_LOG_DIR:-$DEFAULT_LOG_DIR}"
 # Preview deploys with Vercel Authentication need this header.
 BYPASS_SECRET="${TRENDING_CRON_BYPASS_SECRET:-${VERCEL_AUTOMATION_BYPASS_SECRET:-}}"
+WARM_SECRET="${TRENDING_WARM_SECRET:-1}"
+# Match Chrome so the CDN entry cron writes is the one browsers request.
+# (Vercel keys CDN responses by Accept-Encoding; bare curl ≠ br/zstd.)
+BROWSER_ACCEPT_ENCODING="gzip, deflate, br, zstd"
 LOG_FILE="$LOG_DIR/warm.jsonl"
 STATE_FILE="$LOG_DIR/state.env"
 PLIST_PATH="${HOME}/Library/LaunchAgents/${LABEL}.plist"
@@ -102,8 +108,14 @@ warm_one() {
   local curl_args=(
     -sS -o "$body_file" -w "%{http_code}"
     --max-time "$TIMEOUT_SEC"
+    --compressed
     -H "Accept: application/json"
+    -H "Accept-Encoding: ${BROWSER_ACCEPT_ENCODING}"
     -H "User-Agent: trendingnostr-cron/1.0"
+    # Bypass CDN HIT so the function runs and refreshes Runtime Cache.
+    -H "Cache-Control: no-cache"
+    -H "Pragma: no-cache"
+    -H "x-trending-refresh: ${WARM_SECRET}"
   )
   if [[ -n "$BYPASS_SECRET" ]]; then
     curl_args+=(-H "x-vercel-protection-bypass: ${BYPASS_SECRET}")
@@ -262,6 +274,8 @@ write_plist() {
     <string>${LOG_DIR}</string>
     <key>TRENDING_CRON_BYPASS_SECRET</key>
     <string>${BYPASS_SECRET}</string>
+    <key>TRENDING_WARM_SECRET</key>
+    <string>${WARM_SECRET}</string>
     <key>PATH</key>
     <string>${CRON_PATH}</string>
   </dict>

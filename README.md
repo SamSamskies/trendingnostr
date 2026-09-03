@@ -43,7 +43,12 @@ The public endpoint is `/api/inference`. The current implementation calls Gemini
 
 ## Cached trending feed
 
-`/api/trending?hours=48` builds the ranked feed on the server and sets cache headers (`max-age=60` for the browser, `s-maxage=300` for the Vercel CDN). The Mac Mini cron warms the **CDN**, not the browser disk cache — a first visit will still show a network `200` (ideally `x-vercel-cache: HIT`), while a reload within a minute can show `(from disk cache)`. The browser prefers this blob and falls back to the legacy client-side path if the API is down.
+`/api/trending?hours=48` builds the ranked feed on the server and caches it in two places:
+
+1. **Vercel Runtime Cache** (per region) — shared across `Accept-Encoding` variants. Cron refreshes this so a CDN miss still returns the prebuilt JSON in milliseconds (`X-Trending-Cache: runtime`).
+2. **CDN** (`s-maxage=300`) plus browser `max-age=60` — faster when the encoding matches, but Vercel keys CDN entries by `Accept-Encoding`, so bare `curl` and Chrome (`br`/`zstd`) are different keys.
+
+The Mac Mini cron warms both layers (browser-like `Accept-Encoding` + `x-trending-refresh` to force a rebuild into Runtime Cache). A first visit will still show a network `200` (CDN may be `MISS` or `HIT`); look at `X-Trending-Cache` and Time, not “from disk cache”. The browser prefers this blob and falls back to the legacy client-side path if the API is down.
 
 ### Mac Mini cache warmer
 
@@ -51,13 +56,15 @@ Keep the production CDN warm from a Mac that stays awake:
 
 ```sh
 npm run cron:prod:run     # warm once
-npm run cron:prod:start   # launchd every 5 minutes
+npm run cron:prod:start   # launchd every 5 minutes (re-run after script changes)
 npm run cron:status
 npm run cron:logs         # last 50 lines
 npm run cron:logs -- -f
 npm run cron:stats
 npm run cron:stop
 ```
+
+Optional: set the same `TRENDING_WARM_SECRET` in Vercel project env and on the Mac Mini so only your cron can force a rebuild (`x-trending-refresh`).
 
 For a preview or other host: `TRENDING_CRON_BASE_URL=https://… npm run cron:run` (and `cron:start`).
 
