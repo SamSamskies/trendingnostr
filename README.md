@@ -43,7 +43,7 @@ The public endpoint is `/api/inference`. The current implementation calls Gemini
 
 ## Cached trending feed
 
-`/api/trending?hours=48` builds the ranked feed on the server and sets CDN cache headers (`s-maxage=300`). The browser prefers this blob and falls back to the legacy client-side path if the API is down.
+`/api/trending?hours=48` builds the ranked feed on the server and sets cache headers (`max-age=60` for the browser, `s-maxage=300` for the Vercel CDN). The Mac Mini cron warms the **CDN**, not the browser disk cache — a first visit will still show a network `200` (ideally `x-vercel-cache: HIT`), while a reload within a minute can show `(from disk cache)`. The browser prefers this blob and falls back to the legacy client-side path if the API is down.
 
 ### Mac Mini cache warmer
 
