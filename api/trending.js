@@ -45,16 +45,20 @@ function parseHours(req) {
   return isTrendingHours(hours) ? hours : null;
 }
 
-function wantsRefresh(req) {
+/**
+ * @returns {"none" | "refresh" | "unauthorized"}
+ */
+function refreshIntent(req) {
   const raw = req.headers[REFRESH_HEADER];
   const value = Array.isArray(raw) ? raw[0] : raw;
-  if (typeof value !== "string" || !value) return false;
+  if (typeof value !== "string" || !value) return "none";
   const secret = process.env.TRENDING_WARM_SECRET;
-  // If a secret is configured, require an exact match. Otherwise any non-empty
-  // value lets the Mac Mini cron force a rebuild (public DoS surface is the
-  // same as a cold CDN miss already).
-  if (secret) return value === secret;
-  return true;
+  // Secret set + wrong value → fail closed (401). Cron defaults to "1"; a
+  // mismatched Vercel env must not look like a successful warm.
+  if (secret && value !== secret) return "unauthorized";
+  // No secret: any non-empty header forces rebuild (same DoS surface as a
+  // cold CDN miss).
+  return "refresh";
 }
 
 function setTrendingCors(res, req) {
@@ -150,8 +154,19 @@ export default async function handler(req, res) {
     });
   }
 
+  const intent = refreshIntent(req);
+  if (intent === "unauthorized") {
+    setTrendingCors(res, req);
+    setNoStore(res);
+    return res.status(401).json({
+      error: "invalid_warm_secret",
+      message:
+        "x-trending-refresh does not match TRENDING_WARM_SECRET; set the same value on the Mac Mini warmer",
+    });
+  }
+
   try {
-    const refresh = wantsRefresh(req);
+    const refresh = intent === "refresh";
     const { feed, layer } = await getOrBuildFeed(hours, refresh);
     setTrendingCors(res, req);
     // Refresh responses must not land in CDN under the browser key.
