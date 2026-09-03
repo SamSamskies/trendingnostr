@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Mac Mini helper: warm Vercel CDN cache for /api/trending every N minutes.
+# Mac Mini helper: refresh Runtime Cache + warm CDN for /api/trending every N minutes.
 #
 # Usage:
 #   export TRENDING_CRON_BASE_URL="https://your-app.vercel.app"
@@ -18,6 +18,9 @@
 #   TRENDING_CRON_TIMEOUT_SEC=90
 #   TRENDING_CRON_BYPASS_SECRET=...  # Vercel "Protection Bypass for Automation"
 #                                   # (needed for protected preview deploys)
+#   TRENDING_WARM_SECRET=...        # must match Vercel env if set; forces rebuild
+#                                   # into Runtime Cache (cron uses ?_warm=1 so
+#                                   # CDN cannot serve a fresh HIT instead)
 
 set -euo pipefail
 
@@ -37,6 +40,10 @@ TIMEOUT_SEC="${TRENDING_CRON_TIMEOUT_SEC:-$DEFAULT_TIMEOUT}"
 LOG_DIR="${TRENDING_CRON_LOG_DIR:-$DEFAULT_LOG_DIR}"
 # Preview deploys with Vercel Authentication need this header.
 BYPASS_SECRET="${TRENDING_CRON_BYPASS_SECRET:-${VERCEL_AUTOMATION_BYPASS_SECRET:-}}"
+WARM_SECRET="${TRENDING_WARM_SECRET:-1}"
+# Match Chrome so the CDN entry cron writes is the one browsers request.
+# (Vercel keys CDN responses by Accept-Encoding; bare curl ≠ br/zstd.)
+BROWSER_ACCEPT_ENCODING="gzip, deflate, br, zstd"
 LOG_FILE="$LOG_DIR/warm.jsonl"
 STATE_FILE="$LOG_DIR/state.env"
 PLIST_PATH="${HOME}/Library/LaunchAgents/${LABEL}.plist"
@@ -88,9 +95,16 @@ append_log() {
 }
 
 # Warm one hours window; prints one JSON line to stdout.
+#
+# Pragma/Cache-Control: no-cache does NOT bypass a fresh Vercel CDN HIT
+# (s-maxage still valid). Use a distinct URL key (+ refresh header) so the
+# function always runs and rebuilds Runtime Cache, then hit the public URL
+# to populate the browser CDN entry from that cache.
 warm_one() {
   local hours="$1"
-  local url="${TRENDING_CRON_BASE_URL}/api/trending?hours=${hours}"
+  local public_url="${TRENDING_CRON_BASE_URL}/api/trending?hours=${hours}"
+  # Distinct cache key from the public URL — not a cache-bust timestamp.
+  local refresh_url="${public_url}&_warm=1"
   local body_file http_file
   body_file="$(mktemp)"
   http_file="$(mktemp)"
@@ -98,17 +112,24 @@ warm_one() {
   local start_ms end_ms
   start_ms="$(node -e 'process.stdout.write(String(Date.now()))')"
 
-  set +e
-  local curl_args=(
-    -sS -o "$body_file" -w "%{http_code}"
+  local curl_base=(
+    -sS
     --max-time "$TIMEOUT_SEC"
+    --compressed
     -H "Accept: application/json"
+    -H "Accept-Encoding: ${BROWSER_ACCEPT_ENCODING}"
     -H "User-Agent: trendingnostr-cron/1.0"
   )
   if [[ -n "$BYPASS_SECRET" ]]; then
-    curl_args+=(-H "x-vercel-protection-bypass: ${BYPASS_SECRET}")
+    curl_base+=(-H "x-vercel-protection-bypass: ${BYPASS_SECRET}")
   fi
-  curl "${curl_args[@]}" "$url" >"$http_file"
+
+  set +e
+  # 1) Force origin: rebuild into Runtime Cache (handler responds no-store).
+  curl "${curl_base[@]}" \
+    -o "$body_file" -w "%{http_code}" \
+    -H "x-trending-refresh: ${WARM_SECRET}" \
+    "$refresh_url" >"$http_file"
   local curl_ec=$?
   set -e
 
@@ -117,7 +138,7 @@ warm_one() {
   local line
   line="$(
     HOURS_VAL="$hours" \
-    URL_VAL="$url" \
+    URL_VAL="$refresh_url" \
     HTTP_VAL="$(cat "$http_file" 2>/dev/null || echo 0)" \
     CURL_EC="$curl_ec" \
     START_MS="$start_ms" \
@@ -174,6 +195,26 @@ NODE
   )"
 
   rm -f "$body_file" "$http_file"
+
+  # 2) Best-effort: warm the public CDN key from Runtime Cache (fast).
+  local refresh_ok
+  refresh_ok="$(printf '%s' "$line" | node -e '
+    let s = "";
+    process.stdin.on("data", (d) => (s += d));
+    process.stdin.on("end", () => {
+      try {
+        process.stdout.write(JSON.parse(s).ok ? "1" : "0");
+      } catch {
+        process.stdout.write("0");
+      }
+    });
+  ')"
+  if [[ "$refresh_ok" == "1" ]]; then
+    set +e
+    curl "${curl_base[@]}" -o /dev/null "$public_url" >/dev/null 2>&1 || true
+    set -e
+  fi
+
   printf '%s\n' "$line"
 }
 
@@ -262,6 +303,8 @@ write_plist() {
     <string>${LOG_DIR}</string>
     <key>TRENDING_CRON_BYPASS_SECRET</key>
     <string>${BYPASS_SECRET}</string>
+    <key>TRENDING_WARM_SECRET</key>
+    <string>${WARM_SECRET}</string>
     <key>PATH</key>
     <string>${CRON_PATH}</string>
   </dict>

@@ -4,6 +4,7 @@
   "private": true,
   "type": "module",
   "dependencies": {
+    "@vercel/functions": "^3.9.5",
     "ipa-tools": "^0.6.0",
     "nostr-tools": "2.24.2",
     "react": "19.2.8",
