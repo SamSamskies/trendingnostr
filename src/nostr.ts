@@ -1,8 +1,11 @@
 import { SimplePool, type Event } from "nostr-tools";
 import { parseKind0Profile, type Kind0Profile } from "./identity";
 import {
+  FAYAN_CONCURRENCY,
   fetchFayanUsers,
-  filterNotesByFayanReputation,
+  revealedNotesPrefix,
+  uniquePubkeysInOrder,
+  type FayanUserMap,
 } from "./fayan";
 import {
   isFayanFilterEnabled,
@@ -593,6 +596,23 @@ export type TrendingFeed = {
 };
 
 /**
+ * When Fayan is on, `feed.notes` are hashtag-filtered candidates. Call
+ * `fayanReveal.ensureRevealed(n)` after paint (and again on scroll) to resolve
+ * only as many author waves as needed for `n` visible notes.
+ */
+export type FayanRevealController = {
+  /** Fetch waves until at least `minNotes` pass filter, or candidates run out. */
+  ensureRevealed: (minNotes: number) => Promise<LocatedEvent[]>;
+  /** True while unchecked candidate authors remain. */
+  hasMore: () => boolean;
+};
+
+export type TrendingFeedResult = {
+  feed: TrendingFeed;
+  fayanReveal?: FayanRevealController;
+};
+
+/**
  * Client-side trending score weights. Wine's default ranking is reply-heavy, so
  * reactions/reposts outrank replies; zaps use log scale to limit whale skew.
  */
@@ -657,17 +677,69 @@ export function rankTrendingNotes(
     .map((row) => row.note);
 }
 
+/**
+ * Lazy Fayan gate: resolve author waves on demand so a no-scroll visit only
+ * pays for the first page. Failed waves fail-open those authors.
+ */
+function attachFayanReveal(feed: TrendingFeed): TrendingFeedResult {
+  if (feed.notes.length === 0) return { feed };
+
+  const candidates = feed.notes;
+  const ordered = uniquePubkeysInOrder(candidates);
+  let nextIndex = 0;
+  const users: FayanUserMap = new Map();
+  const resolved = new Set<string>();
+  const passThrough = new Set<string>();
+  let chain: Promise<unknown> = Promise.resolve();
+
+  const snapshot = () =>
+    revealedNotesPrefix(candidates, users, resolved, passThrough);
+
+  const ensureRevealed = (minNotes: number): Promise<LocatedEvent[]> => {
+    const run = async () => {
+      while (snapshot().length < minNotes && nextIndex < ordered.length) {
+        const chunk = ordered.slice(
+          nextIndex,
+          nextIndex + FAYAN_CONCURRENCY
+        );
+        nextIndex += chunk.length;
+        const batch = await fetchFayanUsers(chunk);
+        if (!batch) {
+          for (const pubkey of chunk) passThrough.add(pubkey);
+        } else {
+          for (const pubkey of chunk) resolved.add(pubkey);
+          for (const [pubkey, user] of batch) {
+            users.set(pubkey, user);
+          }
+        }
+      }
+      return snapshot();
+    };
+
+    const done = chain.then(run, run);
+    chain = done.then(
+      () => undefined,
+      () => undefined
+    );
+    return done;
+  };
+
+  return {
+    feed,
+    fayanReveal: {
+      ensureRevealed,
+      hasMore: () => nextIndex < ordered.length,
+    },
+  };
+}
+
 async function toTrendingFeed(
   notes: LocatedEvent[],
   engagementById: Record<string, NoteEngagement>
-): Promise<TrendingFeed> {
-  const fayanEnabled = isFayanFilterEnabled();
-  const [engagement, spamIds, fayanUsers] = await Promise.all([
+): Promise<TrendingFeedResult> {
+  const [engagement, spamIds] = await Promise.all([
     enrichEngagementFromRelays(notes, engagementById),
     fetchSpamReportedEventIds(notes.map((note) => note.id)),
-    fayanEnabled
-      ? fetchFayanUsers(notes.map((note) => note.pubkey))
-      : Promise.resolve(null),
   ]);
 
   let visible =
@@ -679,15 +751,14 @@ async function toTrendingFeed(
     visible = filterExcessHashtagNotes(visible);
   }
 
-  // Fail open: only filter when Fayan returned a successful map.
-  if (fayanEnabled && fayanUsers) {
-    visible = filterNotesByFayanReputation(visible, fayanUsers);
-  }
-
-  return {
+  // Rank before Fayan so reveal waves follow feed order.
+  const ranked: TrendingFeed = {
     notes: rankTrendingNotes(visible, engagement),
     engagementById: engagement,
   };
+
+  if (!isFayanFilterEnabled()) return { feed: ranked };
+  return attachFayanReveal(ranked);
 }
 
 /** Prefer the CDN-cached `/api/trending` blob; null on miss / error. */
@@ -735,26 +806,20 @@ async function fetchTrendingFeedFromApi(
  */
 async function applyClientFeedFilters(
   feed: TrendingFeed
-): Promise<TrendingFeed> {
+): Promise<TrendingFeedResult> {
   let visible = feed.notes;
 
   if (isHashtagFilterEnabled()) {
     visible = filterExcessHashtagNotes(visible);
   }
 
-  if (isFayanFilterEnabled()) {
-    const fayanUsers = await fetchFayanUsers(
-      visible.map((note) => note.pubkey)
-    );
-    if (fayanUsers) {
-      visible = filterNotesByFayanReputation(visible, fayanUsers);
-    }
-  }
-
-  return {
+  const next: TrendingFeed = {
     notes: visible,
     engagementById: feed.engagementById,
   };
+
+  if (!isFayanFilterEnabled()) return { feed: next };
+  return attachFayanReveal(next);
 }
 
 /**
@@ -772,7 +837,7 @@ async function applyClientFeedFilters(
  */
 export async function fetchTrendingFeed(
   hours: TrendingHours = RELAY_ALIGNED_TRENDING_HOURS
-): Promise<TrendingFeed> {
+): Promise<TrendingFeedResult> {
   const cached = await fetchTrendingFeedFromApi(hours);
   if (cached) {
     return applyClientFeedFilters(cached);
@@ -855,7 +920,7 @@ export async function fetchTrendingFeed(
 
 async function fetchTrendingFeedFromWine(
   hours: TrendingHours
-): Promise<TrendingFeed> {
+): Promise<TrendingFeedResult> {
   let wine: WineTrendingPayload;
   try {
     wine = await fetchWineTrending(hours);

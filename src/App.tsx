@@ -33,6 +33,7 @@ import {
   getKind0Profiles,
   readCachedKind0Profiles,
   WINDOW_PAGE_SIZE,
+  type FayanRevealController,
   type LocatedEvent,
   type NoteEngagement,
 } from "./nostr";
@@ -325,6 +326,8 @@ export default function App() {
   const [currentDataLength, setCurrentDataLength] = useState(0);
   const [profiles, setProfiles] = useState<Record<string, Kind0Profile>>({});
   const [loading, setLoading] = useState(true);
+  const [fayanBusy, setFayanBusy] = useState(false);
+  const [fayanHasMore, setFayanHasMore] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [reloadToken, setReloadToken] = useState(0);
   const [openTarget, setOpenTarget] = useState<OpenInTarget | null>(null);
@@ -336,19 +339,23 @@ export default function App() {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const askAiRef = useRef<AskAiPanelHandle>(null);
   const sentinelRef = useRef<HTMLDivElement>(null);
+  const fayanRevealRef = useRef<FayanRevealController | null>(null);
 
   useEffect(() => {
     let cancelled = false;
 
     async function load() {
       setLoading(true);
+      setFayanBusy(false);
+      setFayanHasMore(false);
+      fayanRevealRef.current = null;
       setError(null);
       setCurrentDataLength(0);
       setEvents([]);
       setEngagementById({});
 
       try {
-        const feed = await fetchTrendingFeed(trendingHours);
+        const { feed, fayanReveal } = await fetchTrendingFeed(trendingHours);
         if (cancelled) return;
         // Seed cached kind 0 so known nostrmag.com authors drop before paint.
         const cached = readCachedKind0Profiles(
@@ -357,10 +364,38 @@ export default function App() {
         if (Object.keys(cached).length > 0) {
           setProfiles((prev) => ({ ...prev, ...cached }));
         }
-        setEvents(feed.notes);
+
         setEngagementById(feed.engagementById);
-        setCurrentDataLength(Math.min(WINDOW_PAGE_SIZE, feed.notes.length));
+
+        if (!fayanReveal) {
+          setEvents(feed.notes);
+          setCurrentDataLength(Math.min(WINDOW_PAGE_SIZE, feed.notes.length));
+          if (feed.notes.length === 0) {
+            setError("No trending notes right now. Try again in a moment.");
+          }
+          setLoading(false);
+          return;
+        }
+
         if (feed.notes.length === 0) {
+          setError("No trending notes right now. Try again in a moment.");
+          setLoading(false);
+          return;
+        }
+
+        // CDN ready — skeletons while we resolve just enough authors for page 1.
+        fayanRevealRef.current = fayanReveal;
+        setLoading(false);
+        setFayanBusy(true);
+        setFayanHasMore(true);
+
+        const notes = await fayanReveal.ensureRevealed(WINDOW_PAGE_SIZE);
+        if (cancelled) return;
+        setEvents(notes);
+        setCurrentDataLength(Math.min(WINDOW_PAGE_SIZE, notes.length));
+        setFayanHasMore(fayanReveal.hasMore());
+        setFayanBusy(false);
+        if (notes.length === 0 && !fayanReveal.hasMore()) {
           setError("No trending notes right now. Try again in a moment.");
         }
       } catch (err) {
@@ -368,13 +403,15 @@ export default function App() {
         setEvents([]);
         setEngagementById({});
         setCurrentDataLength(0);
+        setFayanBusy(false);
+        setFayanHasMore(false);
+        fayanRevealRef.current = null;
         setError(
           err instanceof Error
             ? err.message
             : "Failed to load trending notes."
         );
-      } finally {
-        if (!cancelled) setLoading(false);
+        setLoading(false);
       }
     }
 
@@ -399,6 +436,8 @@ export default function App() {
 
   const allFilteredByMute =
     !loading &&
+    !fayanBusy &&
+    !fayanHasMore &&
     !error &&
     displayEvents.length === 0 &&
     nonBlockedEvents.length > 0 &&
@@ -422,21 +461,55 @@ export default function App() {
     );
   }, [displayEvents.length]);
 
+  // Expand the window, or resolve the next Fayan wave when the buffer is spent.
   useEffect(() => {
     const sentinel = sentinelRef.current;
-    if (!sentinel || currentDataLength >= displayEvents.length) return;
+    if (!sentinel || loading || error) return;
+
+    const canExpandWindow = currentDataLength < displayEvents.length;
+    const canFetchFayan = fayanHasMore && !fayanBusy;
+    if (!canExpandWindow && !canFetchFayan) return;
 
     const observer = new IntersectionObserver((entries) => {
       if (!entries[0]?.isIntersecting) return;
-      setCurrentDataLength((prev) =>
-        prev + WINDOW_PAGE_SIZE < displayEvents.length
-          ? prev + WINDOW_PAGE_SIZE
-          : displayEvents.length
-      );
+
+      if (currentDataLength < displayEvents.length) {
+        setCurrentDataLength((prev) =>
+          prev + WINDOW_PAGE_SIZE < displayEvents.length
+            ? prev + WINDOW_PAGE_SIZE
+            : displayEvents.length
+        );
+        return;
+      }
+
+      const gate = fayanRevealRef.current;
+      if (!gate?.hasMore() || fayanBusy) return;
+
+      setFayanBusy(true);
+      const want = displayEvents.length + WINDOW_PAGE_SIZE;
+      void gate.ensureRevealed(want).then((notes) => {
+        if (fayanRevealRef.current !== gate) return;
+        setEvents(notes);
+        setFayanHasMore(gate.hasMore());
+        setFayanBusy(false);
+        setCurrentDataLength((prev) =>
+          visiblePageLength(notes.length, Math.max(prev, want))
+        );
+        if (notes.length === 0 && !gate.hasMore()) {
+          setError("No trending notes right now. Try again in a moment.");
+        }
+      });
     });
     observer.observe(sentinel);
     return () => observer.disconnect();
-  }, [currentDataLength, displayEvents.length]);
+  }, [
+    loading,
+    error,
+    currentDataLength,
+    displayEvents.length,
+    fayanHasMore,
+    fayanBusy,
+  ]);
 
   const visibleEvents = useMemo(
     () =>
@@ -567,7 +640,10 @@ export default function App() {
         </>
       ) : null}
 
-      {!loading && (error || displayEvents.length === 0) ? (
+      {!loading &&
+      !fayanBusy &&
+      !fayanHasMore &&
+      (error || displayEvents.length === 0) ? (
         <div className="status status-error" role="status">
           <p>
             {error ??
@@ -595,8 +671,15 @@ export default function App() {
         </div>
       ) : null}
 
-      {!loading && !error && visibleEvents.length > 0 ? (
+      {!loading &&
+      !error &&
+      (visibleEvents.length > 0 || fayanBusy || fayanHasMore) ? (
         <>
+          {fayanBusy ? (
+            <p className="visually-hidden" role="status">
+              Filtering notes by reputation…
+            </p>
+          ) : null}
           <ol className="results">
             {visibleEvents.map((note) => {
               const engagement = engagementById[note.id.toLowerCase()];
@@ -673,6 +756,18 @@ export default function App() {
                 </li>
               );
             })}
+            {fayanBusy ||
+            (fayanHasMore && visibleEvents.length < WINDOW_PAGE_SIZE)
+              ? SKELETON_LINE_COUNTS.slice(
+                  0,
+                  Math.max(1, WINDOW_PAGE_SIZE - visibleEvents.length)
+                ).map((lines, index) => (
+                  <NoteSkeleton
+                    key={`fayan-skel-${index}`}
+                    lines={lines}
+                  />
+                ))
+              : null}
           </ol>
           <div ref={sentinelRef} className="sentinel" aria-hidden="true" />
         </>
