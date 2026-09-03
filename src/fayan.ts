@@ -275,3 +275,44 @@ export function filterNotesByFayanReputation<T extends { pubkey: string }>(
     (note) => !isLowFayanReputation(note.pubkey, users, minPercentile)
   );
 }
+
+/** Unique hex pubkeys in first-seen order (feed rank order). */
+export function uniquePubkeysInOrder(
+  notes: ReadonlyArray<{ pubkey: string }>
+): string[] {
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const note of notes) {
+    const pubkey = note.pubkey.trim().toLowerCase();
+    if (!isHexPubkey(pubkey) || seen.has(pubkey)) continue;
+    seen.add(pubkey);
+    out.push(pubkey);
+  }
+  return out;
+}
+
+/**
+ * Notes from the front of `candidates` whose authors are decided.
+ * Stops at the first unresolved author so reveal stays in rank order.
+ */
+export function revealedNotesPrefix<T extends { pubkey: string }>(
+  candidates: T[],
+  users: FayanUserMap,
+  resolved: ReadonlySet<string>,
+  passThrough: ReadonlySet<string> = new Set(),
+  minPercentile = FAYAN_MIN_PERCENTILE
+): T[] {
+  const out: T[] = [];
+  for (const note of candidates) {
+    const pubkey = note.pubkey.trim().toLowerCase();
+    if (passThrough.has(pubkey)) {
+      out.push(note);
+      continue;
+    }
+    if (!resolved.has(pubkey)) break;
+    if (!isLowFayanReputation(pubkey, users, minPercentile)) {
+      out.push(note);
+    }
+  }
+  return out;
+}
