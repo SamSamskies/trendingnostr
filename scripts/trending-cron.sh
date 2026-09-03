@@ -105,17 +105,20 @@ warm_one() {
   local public_url="${TRENDING_CRON_BASE_URL}/api/trending?hours=${hours}"
   # Distinct cache key from the public URL — not a cache-bust timestamp.
   local refresh_url="${public_url}&_warm=1"
-  local body_file http_file
+  local body_file http_file hdr_file
   body_file="$(mktemp)"
   http_file="$(mktemp)"
+  hdr_file="$(mktemp)"
 
   local start_ms end_ms
   start_ms="$(node -e 'process.stdout.write(String(Date.now()))')"
 
+  # Do NOT use curl --compressed: macOS libcurl cannot decode br/zstd, and
+  # exit 56 ("Unrecognized content encoding") after a 200. Keep the browser
+  # Accept-Encoding header for the CDN key; decompress the body in Node.
   local curl_base=(
     -sS
     --max-time "$TIMEOUT_SEC"
-    --compressed
     -H "Accept: application/json"
     -H "Accept-Encoding: ${BROWSER_ACCEPT_ENCODING}"
     -H "User-Agent: trendingnostr-cron/1.0"
@@ -127,7 +130,7 @@ warm_one() {
   set +e
   # 1) Force origin: rebuild into Runtime Cache (handler responds no-store).
   curl "${curl_base[@]}" \
-    -o "$body_file" -w "%{http_code}" \
+    -D "$hdr_file" -o "$body_file" -w "%{http_code}" \
     -H "x-trending-refresh: ${WARM_SECRET}" \
     "$refresh_url" >"$http_file"
   local curl_ec=$?
@@ -144,8 +147,39 @@ warm_one() {
     START_MS="$start_ms" \
     END_MS="$end_ms" \
     BODY_FILE="$body_file" \
+    HDR_FILE="$hdr_file" \
     node <<'NODE'
 const fs = require("fs");
+const zlib = require("zlib");
+
+function contentEncoding(hdrPath) {
+  try {
+    const raw = fs.readFileSync(hdrPath, "utf8");
+    const match = raw.match(/^content-encoding:\s*(.+)\s*$/im);
+    return match ? match[1].trim().toLowerCase() : "";
+  } catch {
+    return "";
+  }
+}
+
+function decodeBody(buf, encoding) {
+  const enc = (encoding || "").split(",")[0].trim();
+  if (!enc || enc === "identity") return buf;
+  if (enc === "gzip" || enc === "x-gzip") return zlib.gunzipSync(buf);
+  if (enc === "deflate") {
+    try {
+      return zlib.inflateSync(buf);
+    } catch {
+      return zlib.inflateRawSync(buf);
+    }
+  }
+  if (enc === "br") return zlib.brotliDecompressSync(buf);
+  if (enc === "zstd" && typeof zlib.zstdDecompressSync === "function") {
+    return zlib.zstdDecompressSync(buf);
+  }
+  throw new Error(`unsupported_encoding:${enc}`);
+}
+
 const hours = Number(process.env.HOURS_VAL);
 const url = process.env.URL_VAL;
 const httpStatus = Number(process.env.HTTP_VAL) || 0;
@@ -163,11 +197,13 @@ let error = "";
 if (curlEc !== 0) {
   error = `curl_exit_${curlEc}`;
 } else if (httpStatus !== 200) {
-  const body = fs.readFileSync(process.env.BODY_FILE, "utf8").slice(0, 400);
+  const body = fs.readFileSync(process.env.BODY_FILE).toString("utf8").slice(0, 400);
   error = `http_${httpStatus}:${body.replace(/\s+/g, " ")}`;
 } else {
   try {
-    const data = JSON.parse(fs.readFileSync(process.env.BODY_FILE, "utf8"));
+    const encoding = contentEncoding(process.env.HDR_FILE);
+    const raw = decodeBody(fs.readFileSync(process.env.BODY_FILE), encoding);
+    const data = JSON.parse(raw.toString("utf8"));
     ok = true;
     noteCount = Array.isArray(data.notes) ? data.notes.length : 0;
     source = typeof data.source === "string" ? data.source : "";
@@ -194,7 +230,7 @@ process.stdout.write(
 NODE
   )"
 
-  rm -f "$body_file" "$http_file"
+  rm -f "$body_file" "$http_file" "$hdr_file"
 
   # 2) Best-effort: warm the public CDN key from Runtime Cache (fast).
   local refresh_ok
