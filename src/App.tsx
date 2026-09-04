@@ -315,7 +315,7 @@ function NoteAuthor({
 
   return (
     <div className="note-author">
-      <Avatar src={profile?.picture} />
+      <Avatar src={profile?.picture} pubkey={pubkey} />
       <span className="note-author-copy">
         <span className="note-author-heading">
           {nameEl}

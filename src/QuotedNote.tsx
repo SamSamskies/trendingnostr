@@ -367,7 +367,7 @@ export function QuotedNote({
   return (
     <div className="note-quote">
       <div className="note-quote-author">
-        <Avatar src={profile?.picture} />
+        <Avatar src={profile?.picture} pubkey={pubkey} />
         <span className="note-quote-author-copy">
           {nameEl}
           <time dateTime={new Date(createdAt * 1000).toISOString()}>

@@ -1172,8 +1172,20 @@ a.note-link-preview:hover {
 }
 
 .avatar-empty {
-  display: block;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
   border: 1px solid var(--line);
+  color: var(--muted);
+  background: var(--canvas-deep);
+}
+
+.avatar-person {
+  width: 62%;
+  height: 62%;
+  display: block;
+  margin-top: 12%;
 }
 
 .note-menu {
