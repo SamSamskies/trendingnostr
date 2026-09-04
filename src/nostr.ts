@@ -4,6 +4,24 @@ import {
   SPAM_REPORTER_PUBKEY,
 } from "../lib/hiddenAuthors.js";
 import { hasDisplayableNoteContent } from "../lib/noteContent.js";
+import {
+  TRENDING_RELAY,
+  WINE_TRENDING_API,
+  WINE_TRENDING_LIMIT,
+  RELAY_ALIGNED_TRENDING_HOURS,
+  WINE_MIN_REQUEST_INTERVAL_MS,
+  EVENT_HYDRATION_RELAYS,
+  ENGAGEMENT_RELAYS,
+  ENGAGEMENT_BACKFILL_MAX,
+  ENGAGEMENT_ID_CHUNK_SIZE,
+  ENGAGEMENT_QUERY_LIMIT,
+  RELAY_MAX_WAIT_MS,
+  TRENDING_FETCH_ATTEMPTS,
+  chunkArray,
+  scoreTrendingNote,
+  rankTrendingNotes,
+  type NoteEngagement,
+} from "../lib/trendingShared.js";
 import { parseKind0Profile, type Kind0Profile } from "./identity";
 import {
   FAYAN_CONCURRENCY,
@@ -20,42 +38,30 @@ import {
 
 export type LocatedEvent = Event & { seenOn: string[] };
 
-export const TRENDING_RELAY = "wss://trending.relays.land";
-
-/** Public HTTP ranking API (same source the trending relay mirrors). */
-export const WINE_TRENDING_API = "https://api.nostr.wine/trending";
-export const WINE_TRENDING_LIMIT = 200;
-/**
- * Window that matches the trending relay's candidate set. Wine's API max is 48h;
- * its default (4h) misses most relay-ranked notes.
- */
-export const RELAY_ALIGNED_TRENDING_HOURS = 48;
-/** nostr.wine trending API allows 1 request per second. */
-export const WINE_MIN_REQUEST_INTERVAL_MS = 1000;
-
-/**
- * Relays used to hydrate kind 1 events by id after a wine API lookup.
- * Note: `wss://nostr.wine` is payment-gated and rejects anonymous sockets (403).
- */
-export const EVENT_HYDRATION_RELAYS = [
-  "wss://relay.damus.io",
-  "wss://relay.primal.net",
-  "wss://relay.ditto.pub",
-] as const;
+export {
+  TRENDING_RELAY,
+  WINE_TRENDING_API,
+  WINE_TRENDING_LIMIT,
+  RELAY_ALIGNED_TRENDING_HOURS,
+  WINE_MIN_REQUEST_INTERVAL_MS,
+  EVENT_HYDRATION_RELAYS,
+  ENGAGEMENT_RELAYS,
+  ENGAGEMENT_BACKFILL_MAX,
+  ENGAGEMENT_ID_CHUNK_SIZE,
+  ENGAGEMENT_QUERY_LIMIT,
+  RELAY_MAX_WAIT_MS,
+  TRENDING_FETCH_ATTEMPTS,
+  chunkArray,
+  scoreTrendingNote,
+  rankTrendingNotes,
+};
+export type { NoteEngagement };
 
 export const PROFILE_RELAYS = [
   "wss://relay.vertexlab.io",
   "wss://relay.primal.net",
   "wss://relay.ditto.pub",
 ] as const;
-
-/** Same relays as event hydration — used to count engagement when wine lacks a note. */
-export const ENGAGEMENT_RELAYS = EVENT_HYDRATION_RELAYS;
-/** Caps relay backfill latency (chunked `#e` queries). */
-export const ENGAGEMENT_BACKFILL_MAX = 40;
-export const ENGAGEMENT_ID_CHUNK_SIZE = 40;
-/** Per-relay cap so kind-1 reply floods cannot stall EOSE. */
-export const ENGAGEMENT_QUERY_LIMIT = 400;
 
 /** Per-relay cap when fetching kind-1984 spam reports for feed note ids. */
 const SPAM_REPORT_QUERY_LIMIT = 200;
@@ -66,9 +72,6 @@ const SPAM_REPORT_QUERY_LIMIT = 200;
  */
 const MAX_HASHTAG_TAGS = 3;
 
-export const RELAY_MAX_WAIT_MS = 4500;
-/** How many times to retry a failed trending-relay connection. */
-export const TRENDING_FETCH_ATTEMPTS = 3;
 /** Initial notes shown; more reveal as the sentinel scrolls into view. */
 export const WINDOW_PAGE_SIZE = 5;
 /** Extra Fayan-approved notes to keep ready ahead of the visible window. */
@@ -137,13 +140,6 @@ function toLocatedEvents(
   }
   return ordered;
 }
-
-export type NoteEngagement = {
-  reactions: number;
-  replies: number;
-  reposts: number;
-  zapAmount: number;
-};
 
 type WineTrendingItem = {
   event_id?: unknown;
@@ -581,14 +577,6 @@ export const formatCreateAtDate = (unixTimestamp: number) => {
   return `${formattedDate} @ ${formattedTime}`;
 };
 
-export function chunkArray<T>(array: T[], chunkSize: number): T[][] {
-  const chunkedArray: T[][] = [];
-  for (let i = 0; i < array.length; i += chunkSize) {
-    chunkedArray.push(array.slice(i, i + chunkSize));
-  }
-  return chunkedArray;
-}
-
 export type TrendingFeed = {
   notes: LocatedEvent[];
   /** Join key is lowercase event id. Empty when wine metadata is unavailable. */
@@ -611,71 +599,6 @@ export type TrendingFeedResult = {
   feed: TrendingFeed;
   fayanReveal?: FayanRevealController;
 };
-
-/**
- * Client-side trending score weights. Wine's default ranking is reply-heavy, so
- * reactions/reposts outrank replies; zaps use log scale to limit whale skew.
- */
-export const RANK_WEIGHT_REACTIONS = 1;
-export const RANK_WEIGHT_REPLIES = 0.75;
-export const RANK_WEIGHT_REPOSTS = 2.5;
-/** Multiplier on log10(1 + zap sats). */
-export const RANK_ZAP_LOG_SCALE = 4;
-/** Hours added to age before gravity (HN-style floor). */
-export const RANK_AGE_OFFSET_HOURS = 2;
-export const RANK_GRAVITY = 1.35;
-
-function engagementPoints(engagement: NoteEngagement): number {
-  return (
-    RANK_WEIGHT_REACTIONS * engagement.reactions +
-    RANK_WEIGHT_REPLIES * engagement.replies +
-    RANK_WEIGHT_REPOSTS * engagement.reposts +
-    RANK_ZAP_LOG_SCALE * Math.log10(1 + engagement.zapAmount)
-  );
-}
-
-/**
- * HN-style score: weighted wine engagement decayed by note age.
- * Missing / zero engagement scores 0 (sorted after scored notes).
- */
-export function scoreTrendingNote(
-  note: Pick<Event, "created_at">,
-  engagement: NoteEngagement | undefined,
-  nowSec = Math.floor(Date.now() / 1000)
-): number {
-  if (!engagement) return 0;
-  const points = engagementPoints(engagement);
-  if (points <= 0) return 0;
-  const ageHours = Math.max(0, (nowSec - note.created_at) / 3600);
-  return points / (ageHours + RANK_AGE_OFFSET_HOURS) ** RANK_GRAVITY;
-}
-
-/**
- * Re-rank relay/wine candidates with our composite score. Stable for ties.
- * If no engagement metadata is available, keeps source order.
- */
-export function rankTrendingNotes(
-  notes: LocatedEvent[],
-  engagementById: Record<string, NoteEngagement>,
-  nowSec = Math.floor(Date.now() / 1000)
-): LocatedEvent[] {
-  if (notes.length < 2 || Object.keys(engagementById).length === 0) {
-    return notes;
-  }
-
-  return notes
-    .map((note, index) => ({
-      note,
-      index,
-      score: scoreTrendingNote(
-        note,
-        engagementById[note.id.toLowerCase()],
-        nowSec
-      ),
-    }))
-    .sort((a, b) => b.score - a.score || a.index - b.index)
-    .map((row) => row.note);
-}
 
 /**
  * Lazy Fayan gate: resolve author waves on demand so a no-scroll visit only
