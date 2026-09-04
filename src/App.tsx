@@ -33,6 +33,7 @@ import {
   getKind0Profiles,
   readCachedKind0Profiles,
   WINDOW_PAGE_SIZE,
+  WINDOW_PREFETCH_AHEAD,
   type FayanRevealController,
   type LocatedEvent,
   type NoteEngagement,
@@ -397,6 +398,15 @@ export default function App() {
         setFayanBusy(false);
         if (notes.length === 0 && !fayanReveal.hasMore()) {
           setError("No trending notes right now. Try again in a moment.");
+        } else if (fayanReveal.hasMore()) {
+          // Warm the next page so scroll expand does not flash skeletons.
+          void fayanReveal
+            .ensureRevealed(WINDOW_PAGE_SIZE + WINDOW_PREFETCH_AHEAD)
+            .then((more) => {
+              if (cancelled || fayanRevealRef.current !== fayanReveal) return;
+              setEvents(more);
+              setFayanHasMore(fayanReveal.hasMore());
+            });
         }
       } catch (err) {
         if (cancelled) return;
@@ -462,6 +472,8 @@ export default function App() {
   }, [displayEvents.length]);
 
   // Expand the window, or resolve the next Fayan wave when the buffer is spent.
+  // rootMargin starts this a viewport early; quiet prefetch keeps the next
+  // batch ready so we rarely need skeleton placeholders mid-scroll.
   useEffect(() => {
     const sentinel = sentinelRef.current;
     if (!sentinel || loading || error) return;
@@ -470,38 +482,58 @@ export default function App() {
     const canFetchFayan = fayanHasMore && !fayanBusy;
     if (!canExpandWindow && !canFetchFayan) return;
 
-    const observer = new IntersectionObserver((entries) => {
-      if (!entries[0]?.isIntersecting) return;
-
-      if (currentDataLength < displayEvents.length) {
-        setCurrentDataLength((prev) =>
-          prev + WINDOW_PAGE_SIZE < displayEvents.length
-            ? prev + WINDOW_PAGE_SIZE
-            : displayEvents.length
-        );
-        return;
-      }
-
+    const quietPrefetch = (want: number) => {
       const gate = fayanRevealRef.current;
-      if (!gate?.hasMore() || fayanBusy) return;
-
-      setFayanBusy(true);
-      // Target Fayan-approved count (pre-mute/block), not displayEvents —
-      // otherwise muted notes already satisfy the target and no new waves run.
-      const want = events.length + WINDOW_PAGE_SIZE;
+      if (!gate?.hasMore()) return;
       void gate.ensureRevealed(want).then((notes) => {
         if (fayanRevealRef.current !== gate) return;
         setEvents(notes);
         setFayanHasMore(gate.hasMore());
-        setFayanBusy(false);
-        setCurrentDataLength((prev) =>
-          visiblePageLength(notes.length, Math.max(prev, want))
-        );
-        if (notes.length === 0 && !gate.hasMore()) {
-          setError("No trending notes right now. Try again in a moment.");
-        }
       });
-    });
+    };
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (!entries[0]?.isIntersecting) return;
+
+        if (currentDataLength < displayEvents.length) {
+          setCurrentDataLength((prev) =>
+            prev + WINDOW_PAGE_SIZE < displayEvents.length
+              ? prev + WINDOW_PAGE_SIZE
+              : displayEvents.length
+          );
+          // Refill the off-screen buffer while the user keeps scrolling.
+          if (fayanHasMore) {
+            quietPrefetch(events.length + WINDOW_PREFETCH_AHEAD);
+          }
+          return;
+        }
+
+        const gate = fayanRevealRef.current;
+        if (!gate?.hasMore() || fayanBusy) return;
+
+        setFayanBusy(true);
+        // Target Fayan-approved count (pre-mute/block), not displayEvents —
+        // otherwise muted notes already satisfy the target and no new waves run.
+        const want = events.length + WINDOW_PAGE_SIZE;
+        void gate.ensureRevealed(want).then((notes) => {
+          if (fayanRevealRef.current !== gate) return;
+          setEvents(notes);
+          setFayanHasMore(gate.hasMore());
+          setFayanBusy(false);
+          setCurrentDataLength((prev) =>
+            visiblePageLength(notes.length, Math.max(prev, want))
+          );
+          if (gate.hasMore()) {
+            quietPrefetch(notes.length + WINDOW_PREFETCH_AHEAD);
+          }
+          if (notes.length === 0 && !gate.hasMore()) {
+            setError("No trending notes right now. Try again in a moment.");
+          }
+        });
+      },
+      { rootMargin: "0px 0px 800px 0px" }
+    );
     observer.observe(sentinel);
     return () => observer.disconnect();
   }, [

@@ -71,6 +71,8 @@ export const RELAY_MAX_WAIT_MS = 4500;
 export const TRENDING_FETCH_ATTEMPTS = 3;
 /** Initial notes shown; more reveal as the sentinel scrolls into view. */
 export const WINDOW_PAGE_SIZE = 5;
+/** Extra Fayan-approved notes to keep ready ahead of the visible window. */
+export const WINDOW_PREFETCH_AHEAD = 10;
 export const AUTHOR_CHUNK_SIZE = 100;
 /** Revalidate kind 0 entries after this age; stale cache is still served instantly. */
 export const PROFILE_CACHE_TTL_MS = 24 * 60 * 60 * 1000;
