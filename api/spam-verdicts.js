@@ -104,12 +104,19 @@ export default async function handler(req, res) {
       return res.status(400).json({ error: "too_many_verdicts" });
     }
 
-    const result = await mergeSpamVerdicts(verdicts);
-    return res.status(200).json({
-      ok: true,
-      added: result.added,
-      total: result.total,
-    });
+    try {
+      const result = await mergeSpamVerdicts(verdicts);
+      return res.status(200).json({
+        ok: true,
+        added: result.added,
+        total: result.total,
+      });
+    } catch (err) {
+      return res.status(503).json({
+        error: "cache_write_failed",
+        message: err instanceof Error ? err.message : String(err),
+      });
+    }
   }
 
   return res.status(405).json({ error: "method_not_allowed" });
