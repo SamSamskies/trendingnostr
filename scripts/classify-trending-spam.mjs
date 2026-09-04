@@ -14,7 +14,7 @@
  *   OLLAMA_HOST              default http://127.0.0.1:11434
  *   SPAM_OLLAMA_MODEL        default gemma4:e4b
  *   SPAM_CONFIDENCE          default 0.9
- *   SPAM_CLASSIFY_HOURS      feed window to classify (default 48)
+ *   SPAM_CLASSIFY_HOURS      comma-separated windows (default 4,12,24,48)
  *   SPAM_CLASSIFY_MAX        max new notes per run (default 80)
  *   TRENDING_CRON_LOG_DIR    local classified-id cache dir
  *   TRENDING_CRON_BYPASS_SECRET  optional Vercel protection bypass
@@ -23,6 +23,21 @@
 import { mkdirSync, readFileSync, writeFileSync, existsSync } from "node:fs";
 import { join } from "node:path";
 import { homedir } from "node:os";
+
+const ALL_TRENDING_HOURS = [4, 12, 24, 48];
+
+/**
+ * @returns {number[]}
+ */
+function resolveClassifyHours() {
+  const raw = process.env.SPAM_CLASSIFY_HOURS;
+  if (raw == null || String(raw).trim() === "") return ALL_TRENDING_HOURS;
+  const parts = String(raw)
+    .split(",")
+    .map((s) => Number(s.trim()))
+    .filter((n) => ALL_TRENDING_HOURS.includes(n));
+  return parts.length > 0 ? [...new Set(parts)] : ALL_TRENDING_HOURS;
+}
 
 const BASE_URL = (process.env.TRENDING_CRON_BASE_URL || "").replace(/\/$/, "");
 const WARM_SECRET = process.env.TRENDING_WARM_SECRET || "1";
@@ -36,7 +51,7 @@ const OLLAMA_HOST = (process.env.OLLAMA_HOST || "http://127.0.0.1:11434").replac
 );
 const MODEL = process.env.SPAM_OLLAMA_MODEL || "gemma4:e4b";
 const CONFIDENCE = Number(process.env.SPAM_CONFIDENCE || "0.9") || 0.9;
-const HOURS = Number(process.env.SPAM_CLASSIFY_HOURS || "48") || 48;
+const CLASSIFY_HOURS = resolveClassifyHours();
 const MAX_NEW = Math.max(1, Number(process.env.SPAM_CLASSIFY_MAX || "80") || 80);
 const LOG_DIR =
   process.env.TRENDING_CRON_LOG_DIR ||
@@ -152,15 +167,27 @@ function authHeaders(includeWarmSecret = true) {
 }
 
 async function fetchFeedNotes() {
-  const url = `${BASE_URL}/api/trending?hours=${HOURS}`;
-  // Do not send x-trending-refresh — that forces a full rebuild.
-  const res = await fetch(url, { headers: authHeaders(false) });
-  if (!res.ok) {
-    throw new Error(`feed_http_${res.status}`);
+  // Union notes across every served window so short-window rankings that
+  // fall outside the 48h top set still get classified.
+  const byId = new Map();
+  for (const hours of CLASSIFY_HOURS) {
+    const url = `${BASE_URL}/api/trending?hours=${hours}`;
+    // Do not send x-trending-refresh — that forces a full rebuild.
+    const res = await fetch(url, { headers: authHeaders(false) });
+    if (!res.ok) {
+      throw new Error(`feed_http_${res.status}_hours_${hours}`);
+    }
+    const data = await res.json();
+    const notes = Array.isArray(data?.notes) ? data.notes : [];
+    for (const note of notes) {
+      if (!note || !isEventId(note.id) || typeof note.content !== "string") {
+        continue;
+      }
+      const id = note.id.toLowerCase();
+      if (!byId.has(id)) byId.set(id, note);
+    }
   }
-  const data = await res.json();
-  const notes = Array.isArray(data?.notes) ? data.notes : [];
-  return notes.filter((n) => n && isEventId(n.id) && typeof n.content === "string");
+  return [...byId.values()];
 }
 
 async function classifyNote(note) {
@@ -311,6 +338,7 @@ async function main() {
       ok: false,
       error: `post:${err instanceof Error ? err.message : err}`,
       model: MODEL,
+      hours: CLASSIFY_HOURS,
       feedNotes: notes.length,
       pending: pending.length,
       classified,
@@ -329,6 +357,7 @@ async function main() {
     ok: true,
     model: MODEL,
     confidence: CONFIDENCE,
+    hours: CLASSIFY_HOURS,
     feedNotes: notes.length,
     pending: pending.length,
     classified,
