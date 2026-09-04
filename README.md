@@ -66,7 +66,9 @@ npm run cron:stats
 npm run cron:stop
 ```
 
-Optional: set the same `TRENDING_WARM_SECRET` in Vercel project env and on the Mac Mini so only your cron can force a rebuild (`x-trending-refresh`).
+Optional: set the same `TRENDING_WARM_SECRET` in Vercel project env and on the Mac Mini so only your cron can force a rebuild (`x-trending-refresh`). Not required for `/api/spam-verdicts`.
+
+Clear bad LLM flags: `npm run spam:unflag:all` (no secret). Then `npm run cron:prod:run` if you want a rewarm.
 
 Spam classify knobs (Mac Mini): `SPAM_CLASSIFY=0` to skip, `SPAM_OLLAMA_MODEL`, `OLLAMA_HOST`, `SPAM_CONFIDENCE`, `SPAM_CLASSIFY_MAX`. Eval harness: `npm run eval:spam`.
 

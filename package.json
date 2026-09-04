@@ -27,7 +27,10 @@
     "cron:prod:start": "TRENDING_CRON_BASE_URL=https://trendingnostr.vercel.app ./scripts/trending-cron.sh start",
     "cron:prod:run": "TRENDING_CRON_BASE_URL=https://trendingnostr.vercel.app ./scripts/trending-cron.sh run",
     "eval:spam": "node scripts/eval-spam-ollama.mjs",
-    "classify:spam": "node scripts/classify-trending-spam.mjs"
+    "classify:spam": "node scripts/classify-trending-spam.mjs",
+    "spam:local": "node scripts/spam-local.mjs",
+    "spam:unflag": "node scripts/spam-unflag.mjs",
+    "spam:unflag:all": "node scripts/spam-unflag.mjs --all"
   },
   "devDependencies": {
     "@types/react": "19.2.18",

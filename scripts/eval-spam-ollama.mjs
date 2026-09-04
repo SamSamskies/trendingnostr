@@ -14,6 +14,7 @@
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { SPAM_CLASSIFY_SYSTEM } from "../lib/ollamaSpamPrompt.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const ROOT = join(__dirname, "..");
@@ -25,28 +26,9 @@ const OLLAMA_HOST = (process.env.OLLAMA_HOST || "http://127.0.0.1:11434").replac
 );
 const CONFIDENCE =
   Number(process.env.SPAM_CONFIDENCE || "0.9") || 0.9;
-const DEFAULT_MODELS = ["qwen3:1.7b"];
+const DEFAULT_MODELS = ["gemma4:e4b"];
 
-const SYSTEM = `You classify Nostr kind-1 notes for a public trending feed.
-
-Return ONLY a JSON object with this shape:
-{
-  "spam": boolean,
-  "confidence": number,
-  "category": string,
-  "reason": string
-}
-
-Mark spam:true for:
-- trading/crypto funnels (VIP signals, Telegram mentorship, fake win-rate flexes, "join my group")
-- protocol abuse / machine payloads posted as kind 1 (e.g. zone_presence heartbeats)
-- promo farms / engagement bait from known spam patterns
-
-Mark spam:false for:
-- normal social posts
-- earnest market discussion or personal trade journaling without a sales funnel
-
-confidence is 0..1. category is a short snake_case label. reason is one short sentence.`;
+const SYSTEM = SPAM_CLASSIFY_SYSTEM;
 
 function loadFixtures() {
   const raw = JSON.parse(readFileSync(FIXTURES_PATH, "utf8"));
