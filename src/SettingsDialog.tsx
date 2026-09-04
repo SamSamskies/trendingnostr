@@ -198,7 +198,7 @@ export function SettingsDialog({
                 {mutedAuthors.map((pubkey) => (
                   <li key={pubkey} className="settings-muted-item">
                     <span className="settings-muted-author">
-                      <Avatar src={profiles[pubkey]?.picture} />
+                      <Avatar src={profiles[pubkey]?.picture} pubkey={pubkey} />
                       <span className="settings-muted-name">
                         {profileLabel(pubkey, profiles[pubkey]?.displayName)}
                       </span>
