@@ -21,7 +21,7 @@
 #   TRENDING_WARM_SECRET=...        # must match Vercel env if set; forces rebuild
 #                                   # into Runtime Cache (cron uses ?_warm=1 so
 #                                   # CDN cannot serve a fresh HIT instead)
-#   SPAM_CLASSIFY=1                 # run local Ollama classify after warm (default on)
+#   SPAM_CLASSIFY=1                 # opt-in: local Ollama classify after warm (default off)
 #   SPAM_OLLAMA_MODEL=gemma4:e4b
 #   OLLAMA_HOST=http://127.0.0.1:11434
 #   SPAM_CONFIDENCE=0.9
@@ -52,8 +52,8 @@ BROWSER_ACCEPT_ENCODING="gzip, deflate, br, zstd"
 LOG_FILE="$LOG_DIR/warm.jsonl"
 STATE_FILE="$LOG_DIR/state.env"
 PLIST_PATH="${HOME}/Library/LaunchAgents/${LABEL}.plist"
-# Local Ollama spam classify after warm (set SPAM_CLASSIFY=0 to skip).
-SPAM_CLASSIFY="${SPAM_CLASSIFY:-1}"
+# Local Ollama spam classify after warm (opt-in; prefer `npm run classify:spam`).
+SPAM_CLASSIFY="${SPAM_CLASSIFY:-0}"
 SPAM_OLLAMA_MODEL="${SPAM_OLLAMA_MODEL:-gemma4:e4b}"
 CLASSIFY_SCRIPT="$SCRIPT_DIR/classify-trending-spam.mjs"
 

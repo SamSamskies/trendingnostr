@@ -50,7 +50,7 @@ The public endpoint is `/api/inference`. The current implementation calls Gemini
 
 The Mac Mini cron rebuilds Runtime Cache via a distinct URL key (`&_warm=1` + `x-trending-refresh`; `Pragma: no-cache` does not bypass a fresh CDN HIT), then warms the public CDN entry. A first visit will still show a network `200` (CDN may be `MISS` or `HIT`); look at `X-Trending-Cache` and Time, not “from disk cache”. The browser prefers this blob and falls back to the legacy client-side path if the API is down.
 
-After each successful warm, the same cron (optional, `SPAM_CLASSIFY=1` by default) classifies **new** notes with local Ollama (`gemma4:e4b`, `think: false`), POSTs spam event ids to `/api/spam-verdicts`, and re-warms if anything was added. Fail-open if Ollama is down.
+After each successful warm, the same cron can optionally classify **new** notes with local Ollama (`SPAM_CLASSIFY=1`; default **off**). Prefer a manual pass: `npm run classify:spam` (or ask the agent via the `run-spam-classify` skill). When enabled, it POSTs spam event ids to `/api/spam-verdicts` and re-warms if anything was added. Fail-open if Ollama is down.
 
 ### Mac Mini cache warmer
 
@@ -70,7 +70,7 @@ Optional: set the same `TRENDING_WARM_SECRET` in Vercel project env and on the M
 
 Clear bad LLM flags: `npm run spam:unflag:all` (no secret). Then `npm run cron:prod:run` if you want a rewarm.
 
-Spam classify knobs (Mac Mini): `SPAM_CLASSIFY=0` to skip, `SPAM_OLLAMA_MODEL`, `OLLAMA_HOST`, `SPAM_CONFIDENCE`, `SPAM_CLASSIFY_MAX`. Eval harness: `npm run eval:spam`.
+Spam classify knobs (Mac Mini): `SPAM_CLASSIFY=1` to enable on each warm (default off), `SPAM_OLLAMA_MODEL`, `OLLAMA_HOST`, `SPAM_CONFIDENCE`, `SPAM_CLASSIFY_MAX`. Manual: `npm run classify:spam`. Eval: `npm run eval:spam`. Clear flags: `npm run spam:unflag:all`.
 
 For a preview or other host: `TRENDING_CRON_BASE_URL=https://… npm run cron:run` (and `cron:start`).
 
