@@ -5,22 +5,19 @@ alwaysApply: true
 
 # Hide spam authors with HIDDEN_AUTHOR_PUBKEYS
 
-When asked to ban, block, or hide a pubkey from the trending feed, **append it to the existing `HIDDEN_AUTHOR_PUBKEYS` sets**. Do not invent a new block list, and do not use Settings mutes (`mutedAuthors`) for global bans.
+When asked to ban, block, or hide a pubkey from the trending feed, **append it to `HIDDEN_AUTHOR_PUBKEYS` in `lib/hiddenAuthors.js`**. Do not invent a new block list, and do not use Settings mutes (`mutedAuthors`) for global bans.
 
-## Required (keep both in sync)
+## Required
 
-```ts
-// src/nostr.ts
-const HIDDEN_AUTHOR_PUBKEYS = new Set([/* ... */, "lowercase-hex-pubkey"]);
-
-// lib/trendingFeed.js  (server trending blob — same keys)
-const HIDDEN_AUTHOR_PUBKEYS = new Set([/* ... */, "lowercase-hex-pubkey"]);
+```js
+// lib/hiddenAuthors.js — single source of truth (client + server)
+export const HIDDEN_AUTHOR_PUBKEYS = new Set([/* ... */, "lowercase-hex-pubkey"]);
 ```
 
-Lowercase hex only. Applied in `toLocatedEvents` before ranking.
+Lowercase hex only. Imported by `src/nostr.ts` and `lib/trendingFeed.js`. Applied in `toLocatedEvents` before ranking.
 
 ## Do not
 
 - Add `BLOCKED_PUBKEYS` (or similar) in `identity.ts` — that file is for nip-05 hosts / display names only
 - Mute via `muteAuthor` / Settings for a site-wide ban
-- Update only one of `src/nostr.ts` or `lib/trendingFeed.js`
+- Duplicate the list in `src/nostr.ts` or `lib/trendingFeed.js`
