@@ -33,6 +33,7 @@ import {
   getKind0Profiles,
   readCachedKind0Profiles,
   WINDOW_PAGE_SIZE,
+  WINDOW_PREFETCH_AHEAD,
   type FayanRevealController,
   type LocatedEvent,
   type NoteEngagement,
@@ -68,6 +69,30 @@ function visiblePageLength(eventCount: number, currentLength: number): number {
     return Math.min(WINDOW_PAGE_SIZE, eventCount);
   }
   return capped;
+}
+
+type FayanInFlight = {
+  want: number;
+  promise: Promise<LocatedEvent[]>;
+};
+
+/** Reuse an in-flight ensureRevealed when it already targets enough notes. */
+function startFayanReveal(
+  gate: FayanRevealController,
+  want: number,
+  inFlightRef: { current: FayanInFlight | null }
+): Promise<LocatedEvent[]> {
+  const inflight = inFlightRef.current;
+  if (inflight && inflight.want >= want) {
+    return inflight.promise;
+  }
+  const promise = gate.ensureRevealed(want).finally(() => {
+    if (inFlightRef.current?.promise === promise) {
+      inFlightRef.current = null;
+    }
+  });
+  inFlightRef.current = { want, promise };
+  return promise;
 }
 
 function mergeProfiles(
@@ -340,6 +365,8 @@ export default function App() {
   const askAiRef = useRef<AskAiPanelHandle>(null);
   const sentinelRef = useRef<HTMLDivElement>(null);
   const fayanRevealRef = useRef<FayanRevealController | null>(null);
+  const fayanInFlightRef = useRef<FayanInFlight | null>(null);
+  const fayanExpandPendingRef = useRef(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -349,6 +376,8 @@ export default function App() {
       setFayanBusy(false);
       setFayanHasMore(false);
       fayanRevealRef.current = null;
+      fayanInFlightRef.current = null;
+      fayanExpandPendingRef.current = false;
       setError(null);
       setCurrentDataLength(0);
       setEvents([]);
@@ -397,6 +426,17 @@ export default function App() {
         setFayanBusy(false);
         if (notes.length === 0 && !fayanReveal.hasMore()) {
           setError("No trending notes right now. Try again in a moment.");
+        } else if (fayanReveal.hasMore()) {
+          // Warm the next page so scroll expand does not flash skeletons.
+          void startFayanReveal(
+            fayanReveal,
+            WINDOW_PAGE_SIZE + WINDOW_PREFETCH_AHEAD,
+            fayanInFlightRef
+          ).then((more) => {
+            if (cancelled || fayanRevealRef.current !== fayanReveal) return;
+            setEvents(more);
+            setFayanHasMore(fayanReveal.hasMore());
+          });
         }
       } catch (err) {
         if (cancelled) return;
@@ -406,6 +446,8 @@ export default function App() {
         setFayanBusy(false);
         setFayanHasMore(false);
         fayanRevealRef.current = null;
+        fayanInFlightRef.current = null;
+        fayanExpandPendingRef.current = false;
         setError(
           err instanceof Error
             ? err.message
@@ -462,6 +504,8 @@ export default function App() {
   }, [displayEvents.length]);
 
   // Expand the window, or resolve the next Fayan wave when the buffer is spent.
+  // rootMargin starts this a viewport early; quiet prefetch keeps the next
+  // batch ready so we rarely need skeleton placeholders mid-scroll.
   useEffect(() => {
     const sentinel = sentinelRef.current;
     if (!sentinel || loading || error) return;
@@ -470,38 +514,78 @@ export default function App() {
     const canFetchFayan = fayanHasMore && !fayanBusy;
     if (!canExpandWindow && !canFetchFayan) return;
 
-    const observer = new IntersectionObserver((entries) => {
-      if (!entries[0]?.isIntersecting) return;
-
-      if (currentDataLength < displayEvents.length) {
-        setCurrentDataLength((prev) =>
-          prev + WINDOW_PAGE_SIZE < displayEvents.length
-            ? prev + WINDOW_PAGE_SIZE
-            : displayEvents.length
-        );
-        return;
-      }
-
+    const quietPrefetch = (want: number) => {
       const gate = fayanRevealRef.current;
-      if (!gate?.hasMore() || fayanBusy) return;
-
-      setFayanBusy(true);
-      // Target Fayan-approved count (pre-mute/block), not displayEvents —
-      // otherwise muted notes already satisfy the target and no new waves run.
-      const want = events.length + WINDOW_PAGE_SIZE;
-      void gate.ensureRevealed(want).then((notes) => {
+      if (!gate?.hasMore()) return;
+      void startFayanReveal(gate, want, fayanInFlightRef).then((notes) => {
         if (fayanRevealRef.current !== gate) return;
         setEvents(notes);
         setFayanHasMore(gate.hasMore());
-        setFayanBusy(false);
-        setCurrentDataLength((prev) =>
-          visiblePageLength(notes.length, Math.max(prev, want))
-        );
-        if (notes.length === 0 && !gate.hasMore()) {
-          setError("No trending notes right now. Try again in a moment.");
-        }
       });
-    });
+    };
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (!entries[0]?.isIntersecting) return;
+
+        if (currentDataLength < displayEvents.length) {
+          setCurrentDataLength((prev) =>
+            prev + WINDOW_PAGE_SIZE < displayEvents.length
+              ? prev + WINDOW_PAGE_SIZE
+              : displayEvents.length
+          );
+          // Refill the off-screen buffer while the user keeps scrolling.
+          if (fayanHasMore) {
+            quietPrefetch(events.length + WINDOW_PREFETCH_AHEAD);
+          }
+          return;
+        }
+
+        const gate = fayanRevealRef.current;
+        if (
+          !gate?.hasMore() ||
+          fayanBusy ||
+          fayanExpandPendingRef.current
+        ) {
+          return;
+        }
+
+        // Target Fayan-approved count (pre-mute/block), not displayEvents —
+        // otherwise muted notes already satisfy the target and no new waves run.
+        const want = events.length + WINDOW_PAGE_SIZE;
+        // A quiet prefetch already covering `want` should finish without
+        // flipping fayanBusy — otherwise mid-scroll skeletons still flash.
+        const coveredByQuiet = Boolean(
+          fayanInFlightRef.current &&
+            fayanInFlightRef.current.want >= want
+        );
+        if (!coveredByQuiet) {
+          setFayanBusy(true);
+        }
+        fayanExpandPendingRef.current = true;
+        void startFayanReveal(gate, want, fayanInFlightRef)
+          .then((notes) => {
+            if (fayanRevealRef.current !== gate) return;
+            setEvents(notes);
+            setFayanHasMore(gate.hasMore());
+            setCurrentDataLength((prev) =>
+              visiblePageLength(notes.length, Math.max(prev, want))
+            );
+            if (gate.hasMore()) {
+              quietPrefetch(notes.length + WINDOW_PREFETCH_AHEAD);
+            }
+            if (notes.length === 0 && !gate.hasMore()) {
+              setError("No trending notes right now. Try again in a moment.");
+            }
+          })
+          .finally(() => {
+            if (fayanRevealRef.current !== gate) return;
+            fayanExpandPendingRef.current = false;
+            setFayanBusy(false);
+          });
+      },
+      { rootMargin: "0px 0px 800px 0px" }
+    );
     observer.observe(sentinel);
     return () => observer.disconnect();
   }, [
