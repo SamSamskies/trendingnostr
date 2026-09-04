@@ -71,6 +71,30 @@ function visiblePageLength(eventCount: number, currentLength: number): number {
   return capped;
 }
 
+type FayanInFlight = {
+  want: number;
+  promise: Promise<LocatedEvent[]>;
+};
+
+/** Reuse an in-flight ensureRevealed when it already targets enough notes. */
+function startFayanReveal(
+  gate: FayanRevealController,
+  want: number,
+  inFlightRef: { current: FayanInFlight | null }
+): Promise<LocatedEvent[]> {
+  const inflight = inFlightRef.current;
+  if (inflight && inflight.want >= want) {
+    return inflight.promise;
+  }
+  const promise = gate.ensureRevealed(want).finally(() => {
+    if (inFlightRef.current?.promise === promise) {
+      inFlightRef.current = null;
+    }
+  });
+  inFlightRef.current = { want, promise };
+  return promise;
+}
+
 function mergeProfiles(
   prev: Record<string, Kind0Profile>,
   found: Record<string, Kind0Profile>
@@ -341,6 +365,8 @@ export default function App() {
   const askAiRef = useRef<AskAiPanelHandle>(null);
   const sentinelRef = useRef<HTMLDivElement>(null);
   const fayanRevealRef = useRef<FayanRevealController | null>(null);
+  const fayanInFlightRef = useRef<FayanInFlight | null>(null);
+  const fayanExpandPendingRef = useRef(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -350,6 +376,8 @@ export default function App() {
       setFayanBusy(false);
       setFayanHasMore(false);
       fayanRevealRef.current = null;
+      fayanInFlightRef.current = null;
+      fayanExpandPendingRef.current = false;
       setError(null);
       setCurrentDataLength(0);
       setEvents([]);
@@ -400,13 +428,15 @@ export default function App() {
           setError("No trending notes right now. Try again in a moment.");
         } else if (fayanReveal.hasMore()) {
           // Warm the next page so scroll expand does not flash skeletons.
-          void fayanReveal
-            .ensureRevealed(WINDOW_PAGE_SIZE + WINDOW_PREFETCH_AHEAD)
-            .then((more) => {
-              if (cancelled || fayanRevealRef.current !== fayanReveal) return;
-              setEvents(more);
-              setFayanHasMore(fayanReveal.hasMore());
-            });
+          void startFayanReveal(
+            fayanReveal,
+            WINDOW_PAGE_SIZE + WINDOW_PREFETCH_AHEAD,
+            fayanInFlightRef
+          ).then((more) => {
+            if (cancelled || fayanRevealRef.current !== fayanReveal) return;
+            setEvents(more);
+            setFayanHasMore(fayanReveal.hasMore());
+          });
         }
       } catch (err) {
         if (cancelled) return;
@@ -416,6 +446,8 @@ export default function App() {
         setFayanBusy(false);
         setFayanHasMore(false);
         fayanRevealRef.current = null;
+        fayanInFlightRef.current = null;
+        fayanExpandPendingRef.current = false;
         setError(
           err instanceof Error
             ? err.message
@@ -485,7 +517,7 @@ export default function App() {
     const quietPrefetch = (want: number) => {
       const gate = fayanRevealRef.current;
       if (!gate?.hasMore()) return;
-      void gate.ensureRevealed(want).then((notes) => {
+      void startFayanReveal(gate, want, fayanInFlightRef).then((notes) => {
         if (fayanRevealRef.current !== gate) return;
         setEvents(notes);
         setFayanHasMore(gate.hasMore());
@@ -510,27 +542,47 @@ export default function App() {
         }
 
         const gate = fayanRevealRef.current;
-        if (!gate?.hasMore() || fayanBusy) return;
+        if (
+          !gate?.hasMore() ||
+          fayanBusy ||
+          fayanExpandPendingRef.current
+        ) {
+          return;
+        }
 
-        setFayanBusy(true);
         // Target Fayan-approved count (pre-mute/block), not displayEvents —
         // otherwise muted notes already satisfy the target and no new waves run.
         const want = events.length + WINDOW_PAGE_SIZE;
-        void gate.ensureRevealed(want).then((notes) => {
-          if (fayanRevealRef.current !== gate) return;
-          setEvents(notes);
-          setFayanHasMore(gate.hasMore());
-          setFayanBusy(false);
-          setCurrentDataLength((prev) =>
-            visiblePageLength(notes.length, Math.max(prev, want))
-          );
-          if (gate.hasMore()) {
-            quietPrefetch(notes.length + WINDOW_PREFETCH_AHEAD);
-          }
-          if (notes.length === 0 && !gate.hasMore()) {
-            setError("No trending notes right now. Try again in a moment.");
-          }
-        });
+        // A quiet prefetch already covering `want` should finish without
+        // flipping fayanBusy — otherwise mid-scroll skeletons still flash.
+        const coveredByQuiet = Boolean(
+          fayanInFlightRef.current &&
+            fayanInFlightRef.current.want >= want
+        );
+        if (!coveredByQuiet) {
+          setFayanBusy(true);
+        }
+        fayanExpandPendingRef.current = true;
+        void startFayanReveal(gate, want, fayanInFlightRef)
+          .then((notes) => {
+            if (fayanRevealRef.current !== gate) return;
+            setEvents(notes);
+            setFayanHasMore(gate.hasMore());
+            setCurrentDataLength((prev) =>
+              visiblePageLength(notes.length, Math.max(prev, want))
+            );
+            if (gate.hasMore()) {
+              quietPrefetch(notes.length + WINDOW_PREFETCH_AHEAD);
+            }
+            if (notes.length === 0 && !gate.hasMore()) {
+              setError("No trending notes right now. Try again in a moment.");
+            }
+          })
+          .finally(() => {
+            if (fayanRevealRef.current !== gate) return;
+            fayanExpandPendingRef.current = false;
+            setFayanBusy(false);
+          });
       },
       { rootMargin: "0px 0px 800px 0px" }
     );
