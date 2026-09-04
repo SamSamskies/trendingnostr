@@ -57,7 +57,7 @@ After each successful warm, the same cron can optionally classify **new** notes 
 Keep the production CDN warm from a Mac that stays awake:
 
 ```sh
-npm run cron:prod:run     # warm once (+ classify if Ollama is up)
+npm run cron:prod:run     # warm once (+ classify only if SPAM_CLASSIFY=1)
 npm run cron:prod:start   # launchd every 5 minutes (re-run after script changes)
 npm run cron:status
 npm run cron:logs         # last 50 lines
