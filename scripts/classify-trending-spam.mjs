@@ -293,12 +293,20 @@ async function main() {
     }
   }
 
-  saveLocalCache(cache);
+  // Persist non-spam classifications always; only mark spam ids after a
+  // successful POST so a failed upload does not permanently skip them.
+  const spamIds = new Set(spamVerdicts.map((v) => v.id));
+  const cacheWithoutSpam = {
+    byId: Object.fromEntries(
+      Object.entries(cache.byId).filter(([id]) => !spamIds.has(id))
+    ),
+  };
 
   let posted = { added: 0, total: 0 };
   try {
     posted = await postVerdicts(spamVerdicts);
   } catch (err) {
+    saveLocalCache(cacheWithoutSpam);
     summary({
       ok: false,
       error: `post:${err instanceof Error ? err.message : err}`,
@@ -314,6 +322,8 @@ async function main() {
     process.exit(0);
     return;
   }
+
+  saveLocalCache(cache);
 
   summary({
     ok: true,
