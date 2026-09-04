@@ -295,7 +295,7 @@ async function main() {
       classified += 1;
       if (!pred) {
         parseFail += 1;
-        cache.byId[id] = { at: Math.floor(Date.now() / 1000), spam: false, parseFail: true };
+        // Do not cache parse failures — retry next tick (model may recover).
         continue;
       }
       const decidedSpam = pred.spam && pred.confidence >= CONFIDENCE;
