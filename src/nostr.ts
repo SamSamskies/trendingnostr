@@ -45,6 +45,7 @@ export const EVENT_HYDRATION_RELAYS = [
 export const PROFILE_RELAYS = [
   "wss://relay.vertexlab.io",
   "wss://relay.primal.net",
+  "wss://relay.ditto.pub",
 ] as const;
 
 /** Same relays as event hydration — used to count engagement when wine lacks a note. */
