@@ -50,12 +50,14 @@ The public endpoint is `/api/inference`. The current implementation calls Gemini
 
 The Mac Mini cron rebuilds Runtime Cache via a distinct URL key (`&_warm=1` + `x-trending-refresh`; `Pragma: no-cache` does not bypass a fresh CDN HIT), then warms the public CDN entry. A first visit will still show a network `200` (CDN may be `MISS` or `HIT`); look at `X-Trending-Cache` and Time, not “from disk cache”. The browser prefers this blob and falls back to the legacy client-side path if the API is down.
 
+After each successful warm, the same cron (optional, `SPAM_CLASSIFY=1` by default) classifies **new** notes with local Ollama (`gemma4:e4b`, `think: false`), POSTs spam event ids to `/api/spam-verdicts`, and re-warms if anything was added. Fail-open if Ollama is down.
+
 ### Mac Mini cache warmer
 
 Keep the production CDN warm from a Mac that stays awake:
 
 ```sh
-npm run cron:prod:run     # warm once
+npm run cron:prod:run     # warm once (+ classify if Ollama is up)
 npm run cron:prod:start   # launchd every 5 minutes (re-run after script changes)
 npm run cron:status
 npm run cron:logs         # last 50 lines
@@ -66,9 +68,11 @@ npm run cron:stop
 
 Optional: set the same `TRENDING_WARM_SECRET` in Vercel project env and on the Mac Mini so only your cron can force a rebuild (`x-trending-refresh`).
 
+Spam classify knobs (Mac Mini): `SPAM_CLASSIFY=0` to skip, `SPAM_OLLAMA_MODEL`, `OLLAMA_HOST`, `SPAM_CONFIDENCE`, `SPAM_CLASSIFY_MAX`. Eval harness: `npm run eval:spam`.
+
 For a preview or other host: `TRENDING_CRON_BASE_URL=https://… npm run cron:run` (and `cron:start`).
 
-Logs: `~/Library/Logs/trendingnostr/warm.jsonl`. Optional: `TRENDING_CRON_HOURS`, `TRENDING_CRON_INTERVAL_SEC`.
+Logs: `~/Library/Logs/trendingnostr/warm.jsonl` (+ `spam-classified.json` for local id cache). Optional: `TRENDING_CRON_HOURS`, `TRENDING_CRON_INTERVAL_SEC`.
 
 Protected **preview** deploys return `401 Protected Deployment`. Either:
 

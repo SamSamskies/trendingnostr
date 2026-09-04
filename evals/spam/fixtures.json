@@ -1,0 +1,153 @@
+[
+  {
+    "id": "9f3e9960864bcec51b185b91ee4d96f349d92e02ec31e44d5fe6d0f46e88268f",
+    "label": true,
+    "category": "trading_funnel",
+    "profile": {
+      "display_name": "Craig Andrew",
+      "name": "craigtradinghub",
+      "lud16": "fuchsiaswan32@primal.net"
+    },
+    "content": "🌌 Advice from a trader who reads the stars, not the news:\n\nThe market whispers secrets.\nBut only to those who listen with stillness 🔮\n\nDon’t trade every candle like it’s a war 😂\nWait. Observe. Strike when the wind shifts 😂\n\nThat’s how legends move, quietly, then all at once 🆒"
+  },
+  {
+    "id": "867ed4a5be75craig-eth-long",
+    "label": true,
+    "category": "trading_funnel",
+    "profile": {
+      "display_name": "Craig Andrew",
+      "lud16": "fuchsiaswan32@primal.net"
+    },
+    "content": "🎯 Good Long?\n\nWe took positions on ETH with partners -a decent result. Entry was after confirmation at $2,383+\n\n↔️↔️↔️↔️↔️↔️↔️\n\nGuys, just a reminder here I give the zones from which you can buy. Join VIP on Telegram for the full setup."
+  },
+  {
+    "id": "38e6435ca977craig-vip",
+    "label": true,
+    "category": "trading_funnel",
+    "profile": {
+      "display_name": "Craig Andrew",
+      "lud16": "fuchsiaswan32@primal.net"
+    },
+    "content": "+$1,800 from VIP signals 🔥\n\nHe had been watching the channel for almost two months and finally decided to join VIP\n\n💸 A few signals later, he locked in +$1,800 and said he can no longer imagine trading without the group."
+  },
+  {
+    "id": "abd1d623e459craig-winrate",
+    "label": true,
+    "category": "trading_funnel",
+    "profile": {
+      "display_name": "Peter Kay",
+      "lud16": "fuchsiaswan32@primal.net"
+    },
+    "content": "This is what my morning looks like\n\n📊 38 trades already completed.\n\n🟢 82% win rate\n\nThe day is just getting started, and we're already building strong momentum.\n\nWho's trading with me today? Link in bio / Telegram."
+  },
+  {
+    "id": "b7fe5bf29b5fcraig-hustle",
+    "label": true,
+    "category": "trading_funnel",
+    "profile": {
+      "display_name": "Craig Andrew",
+      "lud16": "fuchsiaswan32@primal.net"
+    },
+    "content": "Everyone sees the luxury, but almost no one sees the late nights behind the charts 👀\n\nYou keep waiting for the perfect moment or a lucky break. But the truth is, no one is coming to save you. DM me for mentorship."
+  },
+  {
+    "id": "zone-presence-payload-1",
+    "label": true,
+    "category": "protocol_abuse",
+    "profile": {
+      "display_name": "zone_presence"
+    },
+    "content": "{\"type\":\"zone_presence\",\"gateway\":\"constitute\",\"region\":\"us-east\",\"ts\":1788470000,\"nonce\":\"a1b2c3\"}"
+  },
+  {
+    "id": "zone-presence-humanish-1",
+    "label": true,
+    "category": "protocol_abuse",
+    "profile": {
+      "display_name": "Presence Bot"
+    },
+    "content": "zone_presence ok region=eu-west gateway=constitute heartbeat=1"
+  },
+  {
+    "id": "nostrmag-promo-1",
+    "label": true,
+    "category": "promo_farm",
+    "profile": {
+      "display_name": "Nostr Mag Daily",
+      "nip05": "editor@nostrmag.com"
+    },
+    "content": "🔥 BREAKING on NostrMag: 10 tips to 10x your stack this week. Read the full article and follow our curated feed for more alpha."
+  },
+  {
+    "id": "telegram-signal-generic-1",
+    "label": true,
+    "category": "trading_funnel",
+    "profile": {
+      "display_name": "Crypto Mentor Pro"
+    },
+    "content": "FREE SIGNAL 🚀 BTC looking bullish above 95k. Exact entries in my Telegram VIP (first 50 get 50% off). Don't miss this move!!!"
+  },
+  {
+    "id": "hardneg-btc-discussion-1",
+    "label": false,
+    "category": "legit_trading_talk",
+    "profile": {
+      "display_name": "alice"
+    },
+    "content": "Been watching BTC funding rates all week. Feels crowded long — I'm waiting for a flush before adding spot. Not financial advice, just journaling."
+  },
+  {
+    "id": "hardneg-eth-levels-1",
+    "label": false,
+    "category": "legit_trading_talk",
+    "profile": {
+      "display_name": "bob"
+    },
+    "content": "ETH reclaiming the range high is interesting, but volume is thin. If we lose 2.3k I'm wrong and I'll cut. Curious what others are seeing on the 4h."
+  },
+  {
+    "id": "hardneg-zap-thanks-1",
+    "label": false,
+    "category": "social",
+    "profile": {
+      "display_name": "carla"
+    },
+    "content": "Huge thanks for the zaps on yesterday's thread ⚡ Grateful this corner of nostr still feels human."
+  },
+  {
+    "id": "neg-meme-1",
+    "label": false,
+    "category": "social",
+    "profile": {
+      "display_name": "dan"
+    },
+    "content": "me explaining nostr relays to my friends for the 4th time and somehow making it worse"
+  },
+  {
+    "id": "neg-dev-1",
+    "label": false,
+    "category": "social",
+    "profile": {
+      "display_name": "erin"
+    },
+    "content": "Shipped a small NIP-46 fix today. If your bunker connect hangs on iOS 18, try clearing the cached bunker URL — weird cache invalidation bug."
+  },
+  {
+    "id": "neg-news-opinion-1",
+    "label": false,
+    "category": "social",
+    "profile": {
+      "display_name": "frank"
+    },
+    "content": "The Fed minutes read more hawkish than the headlines. Markets shrugged. Either we're numb or the move already happened in options."
+  },
+  {
+    "id": "hardneg-win-shared-1",
+    "label": false,
+    "category": "legit_trading_talk",
+    "profile": {
+      "display_name": "gina"
+    },
+    "content": "Closed a small long for +4% and immediately wanted to revenge trade. Sat on my hands instead. Progress."
+  }
+]

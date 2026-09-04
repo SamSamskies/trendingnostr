@@ -21,6 +21,11 @@
 #   TRENDING_WARM_SECRET=...        # must match Vercel env if set; forces rebuild
 #                                   # into Runtime Cache (cron uses ?_warm=1 so
 #                                   # CDN cannot serve a fresh HIT instead)
+#   SPAM_CLASSIFY=1                 # run local Ollama classify after warm (default on)
+#   SPAM_OLLAMA_MODEL=gemma4:e4b
+#   OLLAMA_HOST=http://127.0.0.1:11434
+#   SPAM_CONFIDENCE=0.9
+#   SPAM_CLASSIFY_MAX=80
 
 set -euo pipefail
 
@@ -47,6 +52,10 @@ BROWSER_ACCEPT_ENCODING="gzip, deflate, br, zstd"
 LOG_FILE="$LOG_DIR/warm.jsonl"
 STATE_FILE="$LOG_DIR/state.env"
 PLIST_PATH="${HOME}/Library/LaunchAgents/${LABEL}.plist"
+# Local Ollama spam classify after warm (set SPAM_CLASSIFY=0 to skip).
+SPAM_CLASSIFY="${SPAM_CLASSIFY:-1}"
+SPAM_OLLAMA_MODEL="${SPAM_OLLAMA_MODEL:-gemma4:e4b}"
+CLASSIFY_SCRIPT="$SCRIPT_DIR/classify-trending-spam.mjs"
 
 # launchd uses a minimal PATH; include node managers (volta/fnm/nvm) + current node dir.
 CRON_PATH_PREFIX=""
@@ -254,15 +263,28 @@ NODE
   printf '%s\n' "$line"
 }
 
-cmd_run() {
-  require_base_url
-  ensure_log_dir
+# Classify new trending notes via local Ollama; prints one JSON line.
+# Always exits 0 from Node (fail-open); this wrapper returns 0 unless node missing.
+classify_spam() {
+  if [[ ! -f "$CLASSIFY_SCRIPT" ]]; then
+    printf '%s\n' "{\"ok\":false,\"error\":\"missing_classify_script\"}"
+    return 0
+  fi
+  set +e
+  SPAM_OLLAMA_MODEL="$SPAM_OLLAMA_MODEL" \
+  TRENDING_CRON_BASE_URL="$TRENDING_CRON_BASE_URL" \
+  TRENDING_WARM_SECRET="$WARM_SECRET" \
+  TRENDING_CRON_BYPASS_SECRET="$BYPASS_SECRET" \
+  TRENDING_CRON_LOG_DIR="$LOG_DIR" \
+  node "$CLASSIFY_SCRIPT"
+  set -e
+  return 0
+}
 
-  local started
-  started="$(date +%s)"
-  local all_ok=true
-  local notes_total=0
-  local last_err=""
+warm_all_hours() {
+  WARM_ALL_OK=true
+  WARM_NOTES_TOTAL=0
+  WARM_LAST_ERR=""
 
   local hours
   for hours in ${HOURS//,/ }; do
@@ -284,19 +306,56 @@ cmd_run() {
     ')"
     local ok_flag note_count err_text
     IFS=$'\t' read -r ok_flag note_count err_text <<<"$parsed"
-    notes_total=$((notes_total + note_count))
+    WARM_NOTES_TOTAL=$((WARM_NOTES_TOTAL + note_count))
     if [[ "$ok_flag" != "1" ]]; then
-      all_ok=false
-      last_err="$err_text"
+      WARM_ALL_OK=false
+      WARM_LAST_ERR="$err_text"
     fi
   done
+}
+
+cmd_run() {
+  require_base_url
+  ensure_log_dir
+
+  local started
+  started="$(date +%s)"
+
+  warm_all_hours
+
+  # After a successful warm, classify new notes and re-warm if spam was posted.
+  if [[ "$WARM_ALL_OK" == "true" && "$SPAM_CLASSIFY" != "0" && "$SPAM_CLASSIFY" != "false" ]]; then
+    local classify_line rewarm
+    classify_line="$(classify_spam)"
+    echo "$classify_line"
+    append_log "$classify_line"
+    rewarm="$(printf '%s' "$classify_line" | node -e '
+      let s="";
+      process.stdin.on("data", d => s += d);
+      process.stdin.on("end", () => {
+        try {
+          const j = JSON.parse(s.trim());
+          process.stdout.write(j.rewarm ? "1" : "0");
+        } catch {
+          process.stdout.write("0");
+        }
+      });
+    ')"
+    if [[ "$rewarm" == "1" ]]; then
+      local rewarm_line
+      rewarm_line="{\"ts\":\"$(iso_now)\",\"phase\":\"rewarm_after_spam\",\"ok\":true}"
+      echo "$rewarm_line"
+      append_log "$rewarm_line"
+      warm_all_hours
+    fi
+  fi
 
   local now duration_ms
   now="$(date +%s)"
   duration_ms=$(( (now - started) * 1000 ))
-  write_state "$all_ok" "$duration_ms" "$notes_total" "$last_err"
+  write_state "$WARM_ALL_OK" "$duration_ms" "$WARM_NOTES_TOTAL" "$WARM_LAST_ERR"
 
-  if [[ "$all_ok" != "true" ]]; then
+  if [[ "$WARM_ALL_OK" != "true" ]]; then
     exit 1
   fi
 }
@@ -341,6 +400,12 @@ write_plist() {
     <string>${BYPASS_SECRET}</string>
     <key>TRENDING_WARM_SECRET</key>
     <string>${WARM_SECRET}</string>
+    <key>SPAM_CLASSIFY</key>
+    <string>${SPAM_CLASSIFY}</string>
+    <key>SPAM_OLLAMA_MODEL</key>
+    <string>${SPAM_OLLAMA_MODEL}</string>
+    <key>OLLAMA_HOST</key>
+    <string>${OLLAMA_HOST:-http://127.0.0.1:11434}</string>
     <key>PATH</key>
     <string>${CRON_PATH}</string>
   </dict>
