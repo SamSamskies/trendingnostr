@@ -3,6 +3,7 @@ import {
   HIDDEN_AUTHOR_PUBKEYS,
   SPAM_REPORTER_PUBKEY,
 } from "../lib/hiddenAuthors.js";
+import { hasDisplayableNoteContent } from "../lib/noteContent.js";
 import { parseKind0Profile, type Kind0Profile } from "./identity";
 import {
   FAYAN_CONCURRENCY,
@@ -111,13 +112,9 @@ function filterExcessHashtagNotes<T extends { tags: string[][] }>(
   return notes.filter((note) => countHashtagTags(note.tags) <= MAX_HASHTAG_TAGS);
 }
 
-/** Blank / whitespace-only kind 1 bodies — common spam; media notes put URLs in content. */
-function hasNoteContent(note: { content: string }): boolean {
-  return note.content.trim().length > 0;
-}
-
+/** Drop blank and JSON-only kind 1 bodies (bot/protocol spam). */
 function filterEmptyContentNotes<T extends { content: string }>(notes: T[]): T[] {
-  return notes.filter(hasNoteContent);
+  return notes.filter(hasDisplayableNoteContent);
 }
 
 function isRateLimitedCloseReason(reason: string): boolean {
