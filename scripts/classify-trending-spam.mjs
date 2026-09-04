@@ -23,6 +23,11 @@
 import { mkdirSync, readFileSync, writeFileSync, existsSync } from "node:fs";
 import { join } from "node:path";
 import { homedir } from "node:os";
+import {
+  SPAM_CLASSIFY_SYSTEM,
+  isTrivialSocialNote,
+  shouldDropAsSpam,
+} from "../lib/ollamaSpamPrompt.js";
 
 const ALL_TRENDING_HOURS = [4, 12, 24, 48];
 
@@ -58,26 +63,7 @@ const LOG_DIR =
   join(homedir(), "Library/Logs/trendingnostr");
 const CACHE_PATH = join(LOG_DIR, "spam-classified.json");
 
-const SYSTEM = `You classify Nostr kind-1 notes for a public trending feed.
-
-Return ONLY a JSON object with this shape:
-{
-  "spam": boolean,
-  "confidence": number,
-  "category": string,
-  "reason": string
-}
-
-Mark spam:true for:
-- trading/crypto funnels (VIP signals, Telegram mentorship, fake win-rate flexes, "join my group")
-- protocol abuse / machine payloads posted as kind 1 (e.g. zone_presence heartbeats)
-- promo farms / engagement bait from known spam patterns
-
-Mark spam:false for:
-- normal social posts
-- earnest market discussion or personal trade journaling without a sales funnel
-
-confidence is 0..1. category is a short snake_case label. reason is one short sentence.`;
+const SYSTEM = SPAM_CLASSIFY_SYSTEM;
 
 function isEventId(value) {
   return typeof value === "string" && /^[0-9a-f]{64}$/i.test(value);
@@ -221,7 +207,7 @@ async function postVerdicts(verdicts) {
   if (verdicts.length === 0) return { added: 0, total: 0 };
   const res = await fetch(`${BASE_URL}/api/spam-verdicts`, {
     method: "POST",
-    headers: authHeaders(true),
+    headers: authHeaders(false),
     body: JSON.stringify({ verdicts }),
   });
   if (!res.ok) {
@@ -285,12 +271,25 @@ async function main() {
 
   const spamVerdicts = [];
   let classified = 0;
+  let skippedTrivial = 0;
   let parseFail = 0;
   let errors = 0;
 
   for (const note of pending) {
     const id = note.id.toLowerCase();
     try {
+      if (isTrivialSocialNote(note.content)) {
+        skippedTrivial += 1;
+        classified += 1;
+        cache.byId[id] = {
+          at: Math.floor(Date.now() / 1000),
+          spam: false,
+          confidence: 1,
+          category: "trivial_social",
+        };
+        continue;
+      }
+
       const pred = await classifyNote(note);
       classified += 1;
       if (!pred) {
@@ -298,7 +297,7 @@ async function main() {
         // Do not cache parse failures — retry next tick (model may recover).
         continue;
       }
-      const decidedSpam = pred.spam && pred.confidence >= CONFIDENCE;
+      const decidedSpam = shouldDropAsSpam(pred, note.content, CONFIDENCE);
       cache.byId[id] = {
         at: Math.floor(Date.now() / 1000),
         spam: decidedSpam,
@@ -343,6 +342,7 @@ async function main() {
       pending: pending.length,
       classified,
       spamFound: spamVerdicts.length,
+      skippedTrivial,
       parseFail,
       errors,
       durationMs: Date.now() - started,
@@ -364,6 +364,7 @@ async function main() {
     spamFound: spamVerdicts.length,
     postedAdded: posted.added ?? 0,
     postedTotal: posted.total ?? 0,
+    skippedTrivial,
     parseFail,
     errors,
     rewarm: spamVerdicts.length > 0,
