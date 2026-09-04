@@ -24,7 +24,9 @@ function authIntent(req) {
   const value = Array.isArray(raw) ? raw[0] : raw;
   if (typeof value !== "string" || !value) return "missing";
   const secret = process.env.TRENDING_WARM_SECRET;
-  if (secret && value !== secret) return "unauthorized";
+  // Write path must fail closed: if the env secret is unset, any non-empty
+  // header (cron default "1") must not be able to hide notes from trending.
+  if (!secret || value !== secret) return "unauthorized";
   return "ok";
 }
 
