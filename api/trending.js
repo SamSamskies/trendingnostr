@@ -89,25 +89,53 @@ function isFeedShape(value) {
 }
 
 /**
+ * Stable content fingerprint for skip-unchanged writes.
+ * Ignores updatedAt / durationMs so a no-op warm does not rewrite the blob.
+ */
+function feedCacheFingerprint(feed) {
+  return JSON.stringify({
+    hours: feed.hours,
+    source: feed.source,
+    spamFiltered: feed.spamFiltered,
+    notes: feed.notes,
+    engagementById: feed.engagementById,
+  });
+}
+
+function feedsSemanticallyEqual(a, b) {
+  if (!isFeedShape(a) || !isFeedShape(b)) return false;
+  return feedCacheFingerprint(a) === feedCacheFingerprint(b);
+}
+
+/**
  * @param {number} hours
  * @param {boolean} refresh
  * @returns {Promise<{ feed: object, layer: "runtime" | "build" }>}
  */
 async function getOrBuildFeed(hours, refresh) {
   const key = RUNTIME_CACHE_KEY(hours);
+  /** @type {object | null} */
+  let previous = null;
 
-  if (!refresh) {
-    try {
-      const cached = await runtimeCache.get(key);
-      if (isFeedShape(cached)) {
+  try {
+    const cached = await runtimeCache.get(key);
+    if (isFeedShape(cached)) {
+      if (!refresh) {
         return { feed: cached, layer: "runtime" };
       }
-    } catch {
-      // Runtime Cache unavailable (local vercel dev) — fall through to build.
+      previous = cached;
     }
+  } catch {
+    // Runtime Cache unavailable (local vercel dev) — fall through to build.
   }
 
   const feed = await buildTrendingFeed(hours);
+  // Skip set when cron/refresh rebuilt the same ranked content — write units track bytes.
+  // Note: skipping does not extend TTL; unchanged feeds age out until the next real change.
+  if (previous && feedsSemanticallyEqual(previous, feed)) {
+    return { feed, layer: "build" };
+  }
+
   try {
     await runtimeCache.set(key, feed, {
       ttl: RUNTIME_TTL_SEC,
