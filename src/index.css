@@ -1040,6 +1040,11 @@ a.note-quote-author-name:hover {
   height: 100%;
 }
 
+.note-media-lightbox-media[data-swipeable] {
+  touch-action: pan-y;
+  user-select: none;
+}
+
 .note-media-lightbox-media img,
 .note-media-lightbox-media video {
   display: block;

@@ -1,4 +1,4 @@
-import { useEffect, useId, useRef, useState } from "react";
+import { useEffect, useId, useRef, useState, type PointerEvent } from "react";
 import type { MediaKind } from "./media";
 
 export type NoteMediaItem = {
@@ -21,6 +21,8 @@ function PlayBadge() {
   );
 }
 
+const SWIPE_THRESHOLD_PX = 48;
+
 function MediaLightbox({
   items,
   index,
@@ -39,6 +41,11 @@ function MediaLightbox({
   const item = items[current];
   const onCloseRef = useRef(onClose);
   onCloseRef.current = onClose;
+  const swipeRef = useRef<{
+    pointerId: number;
+    x: number;
+    y: number;
+  } | null>(null);
 
   useEffect(() => {
     const dialog = dialogRef.current;
@@ -71,6 +78,34 @@ function MediaLightbox({
     dialog.addEventListener("keydown", onKeyDown);
     return () => dialog.removeEventListener("keydown", onKeyDown);
   }, [current, count, onIndexChange]);
+
+  function clearSwipe() {
+    swipeRef.current = null;
+  }
+
+  function onSwipePointerDown(event: PointerEvent<HTMLDivElement>) {
+    if (count <= 1) return;
+    if (event.pointerType === "mouse") return;
+    swipeRef.current = {
+      pointerId: event.pointerId,
+      x: event.clientX,
+      y: event.clientY,
+    };
+  }
+
+  function onSwipePointerUp(event: PointerEvent<HTMLDivElement>) {
+    const start = swipeRef.current;
+    clearSwipe();
+    if (!start || start.pointerId !== event.pointerId) return;
+
+    const dx = event.clientX - start.x;
+    const dy = event.clientY - start.y;
+    if (Math.abs(dx) < SWIPE_THRESHOLD_PX) return;
+    if (Math.abs(dx) <= Math.abs(dy)) return;
+
+    if (dx > 0) onIndexChange(clampIndex(current - 1, count));
+    else onIndexChange(clampIndex(current + 1, count));
+  }
 
   if (!item) return null;
 
@@ -127,9 +162,15 @@ function MediaLightbox({
           </button>
         ) : null}
 
-        <div className="note-media-lightbox-media">
+        <div
+          className="note-media-lightbox-media"
+          data-swipeable={count > 1 ? "" : undefined}
+          onPointerDown={onSwipePointerDown}
+          onPointerUp={onSwipePointerUp}
+          onPointerCancel={clearSwipe}
+        >
           {item.kind === "image" ? (
-            <img src={item.url} alt="" decoding="async" />
+            <img src={item.url} alt="" decoding="async" draggable={false} />
           ) : (
             <video key={item.url} src={item.url} controls autoPlay playsInline>
               {item.url}
