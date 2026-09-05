@@ -3,17 +3,19 @@
 #
 # Usage:
 #   export TRENDING_CRON_BASE_URL="https://your-app.vercel.app"
-#   ./scripts/trending-cron.sh start    # install + load launchd (every 5 min)
-#   ./scripts/trending-cron.sh stop     # unload launchd
-#   ./scripts/trending-cron.sh status   # launchd + last run
-#   ./scripts/trending-cron.sh logs     # last 50 log lines
-#   ./scripts/trending-cron.sh logs -f  # follow log
-#   ./scripts/trending-cron.sh stats    # success/fail summary
-#   ./scripts/trending-cron.sh run      # warm once (now)
+#   ./scripts/trending-cron.sh start              # install + load launchd (default 5 min)
+#   ./scripts/trending-cron.sh start --interval 75m
+#   ./scripts/trending-cron.sh start -i 4500      # seconds also fine
+#   ./scripts/trending-cron.sh stop               # unload launchd
+#   ./scripts/trending-cron.sh status             # launchd + last run
+#   ./scripts/trending-cron.sh logs               # last 50 log lines
+#   ./scripts/trending-cron.sh logs -f            # follow log
+#   ./scripts/trending-cron.sh stats              # success/fail summary
+#   ./scripts/trending-cron.sh run                # warm once (now)
 #
 # Optional env:
 #   TRENDING_CRON_HOURS=4,12,24,48
-#   TRENDING_CRON_INTERVAL_SEC=300
+#   TRENDING_CRON_INTERVAL_SEC=300   # default StartInterval; overridden by --interval
 #   TRENDING_CRON_LOG_DIR=~/Library/Logs/trendingnostr
 #   TRENDING_CRON_TIMEOUT_SEC=90
 #   TRENDING_CRON_BYPASS_SECRET=...  # Vercel "Protection Bypass for Automation"
@@ -67,8 +69,25 @@ CRON_PATH="${CRON_PATH_PREFIX}${HOME}/.volta/bin:${HOME}/.local/share/fnm/curren
 export PATH="${CRON_PATH}:${PATH}"
 
 usage() {
-  sed -n '2,18p' "$0" | sed 's/^# \?//'
+  sed -n '2,22p' "$0" | sed 's/^# \?//'
   exit "${1:-0}"
+}
+
+# Parse "4500", "75m", or "1h" → seconds.
+parse_interval_arg() {
+  local raw="$1"
+  if [[ "$raw" =~ ^([0-9]+)([smh])?$ ]]; then
+    local n="${BASH_REMATCH[1]}"
+    local u="${BASH_REMATCH[2]:-s}"
+    case "$u" in
+      s) printf '%s\n' "$n" ;;
+      m) printf '%s\n' "$((n * 60))" ;;
+      h) printf '%s\n' "$((n * 3600))" ;;
+    esac
+    return 0
+  fi
+  echo "error: invalid interval '$raw' (use seconds, or e.g. 75m / 1h)" >&2
+  exit 1
 }
 
 require_base_url() {
@@ -420,6 +439,31 @@ EOF
 }
 
 cmd_start() {
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      -i|--interval)
+        if [[ $# -lt 2 ]]; then
+          echo "error: $1 requires a value (e.g. 75m or 4500)" >&2
+          exit 1
+        fi
+        INTERVAL_SEC="$(parse_interval_arg "$2")"
+        shift 2
+        ;;
+      -h|--help)
+        usage 0
+        ;;
+      *)
+        echo "error: unknown start option: $1" >&2
+        usage 1
+        ;;
+    esac
+  done
+
+  if ! [[ "$INTERVAL_SEC" =~ ^[1-9][0-9]*$ ]]; then
+    echo "error: interval must be a positive integer (seconds), got: $INTERVAL_SEC" >&2
+    exit 1
+  fi
+
   require_base_url
   write_plist
   launchctl bootout "gui/$(id -u)/${LABEL}" 2>/dev/null || true
@@ -444,12 +488,23 @@ cmd_stop() {
 }
 
 cmd_status() {
+  local interval_display="${INTERVAL_SEC}s"
+  if [[ -f "$PLIST_PATH" ]]; then
+    local plist_interval
+    plist_interval="$(
+      /usr/libexec/PlistBuddy -c 'Print :StartInterval' "$PLIST_PATH" 2>/dev/null || true
+    )"
+    if [[ -n "$plist_interval" ]]; then
+      interval_display="${plist_interval}s (from plist)"
+    fi
+  fi
+
   echo "label:    $LABEL"
   echo "plist:    $PLIST_PATH"
   echo "log:      $LOG_FILE"
   echo "base url: ${TRENDING_CRON_BASE_URL:-"(not set in this shell)"}"
   echo "hours:    $HOURS"
-  echo "interval: ${INTERVAL_SEC}s"
+  echo "interval: $interval_display"
   echo
 
   if launchctl print "gui/$(id -u)/${LABEL}" >/dev/null 2>&1; then
