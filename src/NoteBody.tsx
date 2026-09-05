@@ -13,9 +13,11 @@ const COLLAPSED_MAX_HEIGHT_PX = 440;
 function unloadedMediaExtraHeight(root: HTMLElement): number {
   let extra = 0;
 
-  for (const img of root.querySelectorAll<HTMLImageElement>("img.note-image")) {
-    // Grids use square cells with aspect-ratio; don't double-count lazy thumbs.
-    if (img.closest(".note-media-grid")) continue;
+  // Standalone images, plus lone MediaGrid images (natural aspect, no reserved
+  // cell). Multi-item grids keep square aspect-ratio cells — skip those thumbs.
+  for (const img of root.querySelectorAll<HTMLImageElement>(
+    "img.note-image, .note-media-grid[data-count='1'] img.note-media-grid-thumb"
+  )) {
     if (img.complete) continue;
     const width = img.clientWidth || root.clientWidth;
     if (width <= 0) continue;

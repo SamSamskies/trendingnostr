@@ -58,6 +58,7 @@ function MediaLightbox({
     if (!dialog) return;
 
     const onKeyDown = (event: KeyboardEvent) => {
+      if (count <= 1) return;
       if (event.key === "ArrowLeft") {
         event.preventDefault();
         onIndexChange(clampIndex(current - 1, count));
@@ -84,7 +85,7 @@ function MediaLightbox({
     >
       <div className="note-media-lightbox-chrome">
         <p id={titleId} className="note-media-lightbox-count" aria-live="polite">
-          {current + 1} / {count}
+          {count > 1 ? `${current + 1} / ${count}` : "Media"}
         </p>
         <button
           type="button"
@@ -104,25 +105,27 @@ function MediaLightbox({
         </button>
       </div>
 
-      <div className="note-media-lightbox-stage">
-        <button
-          type="button"
-          className="note-media-lightbox-nav"
-          aria-label="Previous media"
-          disabled={current === 0}
-          onClick={() => onIndexChange(current - 1)}
-        >
-          <svg viewBox="0 0 24 24" aria-hidden="true">
-            <path
-              d="M14.5 5.5 8 12l6.5 6.5"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2.2"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            />
-          </svg>
-        </button>
+      <div className="note-media-lightbox-stage" data-single={count === 1 ? "" : undefined}>
+        {count > 1 ? (
+          <button
+            type="button"
+            className="note-media-lightbox-nav"
+            aria-label="Previous media"
+            disabled={current === 0}
+            onClick={() => onIndexChange(current - 1)}
+          >
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path
+                d="M14.5 5.5 8 12l6.5 6.5"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2.2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
+            </svg>
+          </button>
+        ) : null}
 
         <div className="note-media-lightbox-media">
           {item.kind === "image" ? (
@@ -134,24 +137,26 @@ function MediaLightbox({
           )}
         </div>
 
-        <button
-          type="button"
-          className="note-media-lightbox-nav"
-          aria-label="Next media"
-          disabled={current === count - 1}
-          onClick={() => onIndexChange(current + 1)}
-        >
-          <svg viewBox="0 0 24 24" aria-hidden="true">
-            <path
-              d="M9.5 5.5 16 12l-6.5 6.5"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2.2"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            />
-          </svg>
-        </button>
+        {count > 1 ? (
+          <button
+            type="button"
+            className="note-media-lightbox-nav"
+            aria-label="Next media"
+            disabled={current === count - 1}
+            onClick={() => onIndexChange(current + 1)}
+          >
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path
+                d="M9.5 5.5 16 12l-6.5 6.5"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2.2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
+            </svg>
+          </button>
+        ) : null}
       </div>
     </dialog>
   );
@@ -168,7 +173,9 @@ export function MediaGrid({ items }: { items: NoteMediaItem[] }) {
       <div
         className="note-media-grid"
         data-count={count}
-        aria-label={`${count} media attachments`}
+        aria-label={
+          count === 1 ? "Media attachment" : `${count} media attachments`
+        }
       >
         {items.map((item, index) => (
           <button
@@ -177,8 +184,12 @@ export function MediaGrid({ items }: { items: NoteMediaItem[] }) {
             className="note-media-grid-item"
             aria-label={
               item.kind === "video"
-                ? `Play video ${index + 1} of ${count}`
-                : `View image ${index + 1} of ${count}`
+                ? count === 1
+                  ? "Play video"
+                  : `Play video ${index + 1} of ${count}`
+                : count === 1
+                  ? "View larger image"
+                  : `View image ${index + 1} of ${count}`
             }
             onClick={() => setViewerIndex(index)}
           >

@@ -74,7 +74,9 @@ export function coalesceMedia(tokens: NoteContentToken[]): ReactNode[] {
         break;
       }
 
-      if (items.length >= 2) {
+      // Grids open the lightbox; use them for multi-media and for a lone image.
+      // A lone video stays standalone so native controls remain inline.
+      if (items.length >= 2 || items[0]?.kind === "image") {
         nodes.push(<MediaGrid key={`media-grid-${keys[0]}`} items={items} />);
       } else {
         nodes.push(renderStandaloneMedia(items[0], keys[0]));
