@@ -59,6 +59,7 @@ Keep the production CDN warm from a Mac that stays awake:
 ```sh
 npm run cron:prod:run     # warm once (+ classify only if SPAM_CLASSIFY=1)
 npm run cron:prod:start   # launchd every 5 minutes (re-run after script changes)
+npm run cron:prod:start -- --interval 75m   # custom StartInterval (also -i 4500)
 npm run cron:status
 npm run cron:logs         # last 50 lines
 npm run cron:logs -- -f
@@ -66,15 +67,19 @@ npm run cron:stats
 npm run cron:stop
 ```
 
+`--interval` / `-i` accepts seconds (`4500`), minutes (`75m`), or hours (`1h`). It overrides `TRENDING_CRON_INTERVAL_SEC` and is written into the launchd plist. Re-run `cron:prod:start` (with the flag) after changing the interval or the script.
+
+**Hobby Runtime Cache quota:** each warm does a full `runtimeCache.set` per hours window. Vercel bills those as **write units** (8 KB chunks), not as the operation counts shown under Observability → Runtime Cache. On Hobby the included allotment is small (~200k write units / rolling 30 days); warming `4,12,24,48` every 5 minutes can burn through it in a couple of days. Prefer a longer `--interval` (and raise `RUNTIME_TTL_SEC` / CDN `s-maxage` if the interval exceeds the current TTLs), fewer `TRENDING_CRON_HOURS`, or stop the cron when idle. Usage emails are the main quota signal on Hobby; `vercel usage` 404s without a Pro billing cycle.
+
 Optional: set the same `TRENDING_WARM_SECRET` in Vercel project env and on the Mac Mini so only your cron can force a rebuild (`x-trending-refresh`). Not required for `/api/spam-verdicts`.
 
 Clear bad LLM flags: `npm run spam:unflag:all` (no secret). Then `npm run cron:prod:run` if you want a rewarm.
 
 Spam classify knobs (Mac Mini): `SPAM_CLASSIFY=1` to enable on each warm (default off), `SPAM_OLLAMA_MODEL`, `OLLAMA_HOST`, `SPAM_CONFIDENCE`, `SPAM_CLASSIFY_MAX`. Manual: `npm run classify:spam`. Eval: `npm run eval:spam`. Clear flags: `npm run spam:unflag:all`.
 
-For a preview or other host: `TRENDING_CRON_BASE_URL=https://… npm run cron:run` (and `cron:start`).
+For a preview or other host: `TRENDING_CRON_BASE_URL=https://… npm run cron:run` (and `cron:start -- --interval 75m`).
 
-Logs: `~/Library/Logs/trendingnostr/warm.jsonl` (+ `spam-classified.json` for local id cache). Optional: `TRENDING_CRON_HOURS`, `TRENDING_CRON_INTERVAL_SEC`.
+Logs: `~/Library/Logs/trendingnostr/warm.jsonl` (+ `spam-classified.json` for local id cache). Optional: `TRENDING_CRON_HOURS`, `TRENDING_CRON_INTERVAL_SEC` (default interval; overridden by `--interval` on start).
 
 Protected **preview** deploys return `401 Protected Deployment`. Either:
 
