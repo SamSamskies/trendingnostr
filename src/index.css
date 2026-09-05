@@ -1027,6 +1027,8 @@ a.note-quote-author-name:hover {
 
 .note-media-lightbox-stage[data-single] {
   grid-template-columns: minmax(0, 1fr);
+  /* Beat the mobile 3-row (nav / media / nav) template when navs are omitted. */
+  grid-template-rows: minmax(0, 1fr);
 }
 
 .note-media-lightbox-media {
