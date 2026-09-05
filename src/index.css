@@ -876,6 +876,26 @@ a.note-quote-author-name:hover {
   grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
+/* Lone image: keep natural aspect (same as .note-image), still open lightbox. */
+.note-media-grid[data-count="1"] {
+  display: block;
+}
+
+.note-media-grid[data-count="1"] .note-media-grid-item {
+  aspect-ratio: auto;
+  width: fit-content;
+  max-width: 100%;
+  background: transparent;
+}
+
+.note-media-grid[data-count="1"] .note-media-grid-thumb {
+  width: auto;
+  height: auto;
+  max-width: 100%;
+  max-height: min(70vh, 32rem);
+  object-fit: contain;
+}
+
 .note-media-grid-item {
   position: relative;
   display: block;
@@ -1003,6 +1023,10 @@ a.note-quote-author-name:hover {
   align-items: center;
   gap: 0.45rem;
   height: calc(100% - 2.5rem);
+}
+
+.note-media-lightbox-stage[data-single] {
+  grid-template-columns: minmax(0, 1fr);
 }
 
 .note-media-lightbox-media {
