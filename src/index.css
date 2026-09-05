@@ -1027,7 +1027,7 @@ a.note-quote-author-name:hover {
 
 .note-media-lightbox-stage[data-single] {
   grid-template-columns: minmax(0, 1fr);
-  /* Beat the mobile 3-row (nav / media / nav) template when navs are omitted. */
+  /* Beat the mobile media + bottom-navs template when navs are omitted. */
   grid-template-rows: minmax(0, 1fr);
 }
 
@@ -1063,9 +1063,27 @@ a.note-quote-author-name:hover {
   }
 
   .note-media-lightbox-stage {
-    grid-template-columns: 1fr;
-    grid-template-rows: auto minmax(0, 1fr) auto;
+    grid-template-columns: 1fr 1fr;
+    grid-template-rows: minmax(0, 1fr) auto;
+    grid-template-areas:
+      "media media"
+      "prev next";
+    column-gap: 0.65rem;
     justify-items: center;
+  }
+
+  .note-media-lightbox-stage > .note-media-lightbox-nav:first-of-type {
+    grid-area: prev;
+    justify-self: end;
+  }
+
+  .note-media-lightbox-stage > .note-media-lightbox-nav:last-of-type {
+    grid-area: next;
+    justify-self: start;
+  }
+
+  .note-media-lightbox-media {
+    grid-area: media;
   }
 
   .note-media-lightbox-nav {
