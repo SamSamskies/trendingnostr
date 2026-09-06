@@ -21,12 +21,17 @@ import {
   ENGAGEMENT_QUERY_LIMIT,
   RELAY_MAX_WAIT_MS,
   TRENDING_FETCH_ATTEMPTS,
+  VERTEX_PROFILE_RELAY,
+  FALLBACK_PROFILE_RELAYS,
+  PROFILE_RELAYS,
+  RANK_MISSING_VERTEX_PROFILE_FACTOR,
   chunkArray,
   scoreTrendingNote,
   rankTrendingNotes,
   limitTrendingFeed,
   type NoteEngagement,
 } from "../lib/trendingShared.js";
+import { fetchVertexProfilePubkeys } from "../lib/vertexProfiles.js";
 import { parseKind0Profile, type Kind0Profile } from "./identity";
 import {
   FAYAN_CONCURRENCY,
@@ -57,19 +62,18 @@ export {
   ENGAGEMENT_QUERY_LIMIT,
   RELAY_MAX_WAIT_MS,
   TRENDING_FETCH_ATTEMPTS,
+  VERTEX_PROFILE_RELAY,
+  FALLBACK_PROFILE_RELAYS,
+  PROFILE_RELAYS,
+  RANK_MISSING_VERTEX_PROFILE_FACTOR,
   chunkArray,
   scoreTrendingNote,
   rankTrendingNotes,
   limitTrendingFeed,
 };
+export { fetchVertexProfilePubkeys } from "../lib/vertexProfiles.js";
 export { countHashtagTags } from "../lib/noteContent.js";
 export type { NoteEngagement };
-
-export const PROFILE_RELAYS = [
-  "wss://relay.vertexlab.io",
-  "wss://relay.primal.net",
-  "wss://relay.ditto.pub",
-] as const;
 
 /** Per-relay cap when fetching kind-1984 spam reports for feed note ids. */
 const SPAM_REPORT_QUERY_LIMIT = 200;
@@ -646,9 +650,10 @@ async function toTrendingFeed(
   engagementById: Record<string, NoteEngagement>
 ): Promise<TrendingFeedResult> {
   const withContent = filterEmptyContentNotes(notes);
-  const [engagement, spamIds] = await Promise.all([
+  const [engagement, spamIds, vertexProfilePubkeys] = await Promise.all([
     enrichEngagementFromRelays(withContent, engagementById),
     fetchSpamReportedEventIds(withContent.map((note) => note.id)),
+    fetchVertexProfilePubkeys(withContent.map((note) => note.pubkey)),
   ]);
 
   let visible =
@@ -662,7 +667,7 @@ async function toTrendingFeed(
 
   // Rank before Fayan so reveal waves follow feed order.
   const limited = limitTrendingFeed(
-    rankTrendingNotes(visible, engagement),
+    rankTrendingNotes(visible, engagement, { vertexProfilePubkeys }),
     engagement
   );
   const ranked: TrendingFeed = {
@@ -979,9 +984,10 @@ export function readCachedKind0Profiles(
 }
 
 /**
- * Load kind 0 profiles from Vertex + Primal in parallel; keep newest
- * per pubkey. Serves localStorage/memory cache first and only queries relays
- * for missing or stale pubkeys.
+ * Load kind 0 profiles from Vertex and Primal/Ditto in parallel; keep newest
+ * per pubkey. Vertex is queried separately so its curated set stays distinct
+ * from display fallbacks. Serves localStorage/memory cache first and only
+ * queries relays for missing or stale pubkeys.
  */
 export async function getKind0Profiles(
   pubkeys: string[]
@@ -1011,13 +1017,16 @@ export async function getKind0Profiles(
 
   try {
     for (const authors of chunkArray(toFetch, AUTHOR_CHUNK_SIZE)) {
-      const settled = await Promise.allSettled(
-        PROFILE_RELAYS.map((relay) =>
-          pool.querySync([relay], { kinds: [0], authors, limit: authors.length }, {
-            maxWait: RELAY_MAX_WAIT_MS,
-          })
-        )
-      );
+      const filter = { kinds: [0], authors, limit: authors.length };
+      const opts = { maxWait: RELAY_MAX_WAIT_MS };
+
+      // Vertex (curated) first in the list; Primal/Ditto fall back — all parallel.
+      const settled = await Promise.allSettled([
+        pool.querySync([VERTEX_PROFILE_RELAY], filter, opts),
+        ...FALLBACK_PROFILE_RELAYS.map((relay) =>
+          pool.querySync([relay], filter, opts)
+        ),
+      ]);
 
       for (const result of settled) {
         if (result.status !== "fulfilled") continue;

@@ -11,6 +11,11 @@ export declare const ENGAGEMENT_BACKFILL_MAX: number;
 export declare const ENGAGEMENT_ID_CHUNK_SIZE: number;
 export declare const ENGAGEMENT_QUERY_LIMIT: number;
 
+export declare const VERTEX_PROFILE_RELAY: string;
+export declare const FALLBACK_PROFILE_RELAYS: readonly string[];
+export declare const PROFILE_RELAYS: readonly string[];
+export declare const VERTEX_PROFILE_AUTHOR_CHUNK: number;
+
 export declare const RELAY_MAX_WAIT_MS: number;
 export declare const TRENDING_FETCH_ATTEMPTS: number;
 
@@ -20,6 +25,7 @@ export declare const RANK_WEIGHT_REPOSTS: number;
 export declare const RANK_ZAP_LOG_SCALE: number;
 export declare const RANK_AGE_OFFSET_HOURS: number;
 export declare const RANK_GRAVITY: number;
+export declare const RANK_MISSING_VERTEX_PROFILE_FACTOR: number;
 
 export declare function chunkArray<T>(array: T[], chunkSize: number): T[][];
 
@@ -30,16 +36,25 @@ export type NoteEngagement = {
   zapAmount: number;
 };
 
+export type TrendingScoreOptions = {
+  vertexProfilePubkeys?: Set<string> | null;
+};
+
+export type RankTrendingNotesOptions = TrendingScoreOptions & {
+  nowSec?: number;
+};
+
 export declare function scoreTrendingNote(
-  note: { created_at: number },
+  note: { created_at: number; pubkey?: string },
   engagement: NoteEngagement | undefined,
-  nowSec?: number
+  nowSec?: number,
+  options?: TrendingScoreOptions
 ): number;
 
-export declare function rankTrendingNotes<T extends { id: string }>(
+export declare function rankTrendingNotes<T extends { id: string; pubkey?: string }>(
   notes: T[],
   engagementById: Record<string, NoteEngagement>,
-  nowSec?: number
+  options?: RankTrendingNotesOptions
 ): T[];
 
 export declare function limitTrendingFeed<T extends { id: string }>(
