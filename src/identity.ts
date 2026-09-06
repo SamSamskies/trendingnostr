@@ -83,7 +83,10 @@ const BLOCKED_NIP05_HOSTS = new Set(["nostrmag.com", "cdnsoft.net"]);
  * Display names (kind 0 `display_name` / `name`) whose authors are hidden.
  * Compared case-insensitively after trim + whitespace collapse.
  */
-const BLOCKED_DISPLAY_NAMES = new Set(["craig andrew"]);
+const BLOCKED_DISPLAY_NAMES = new Set([
+  "craig andrew",
+  "imad from gaza🍉",
+]);
 
 /** Hostname from `name@domain` (lowercased), or null if missing/malformed. */
 export function nip05Hostname(nip05: string | undefined): string | null {
