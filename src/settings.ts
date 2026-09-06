@@ -18,11 +18,6 @@ export type AppSettings = {
    * Failures fall open (feed stays unfiltered).
    */
   fayanFilter: boolean;
-  /**
-   * When true, hide notes with 4 or more distinct `t` (hashtag) tags.
-   * Spammers often bury hashtags in tags without putting them in content.
-   */
-  hashtagFilter: boolean;
 };
 
 const DEFAULT_SETTINGS: AppSettings = {
@@ -30,7 +25,6 @@ const DEFAULT_SETTINGS: AppSettings = {
   trendingHours: 48,
   mutedAuthors: [],
   fayanFilter: true,
-  hashtagFilter: true,
 };
 
 function normalizeMutedAuthors(raw: unknown): string[] {
@@ -80,10 +74,6 @@ function normalize(raw: unknown): AppSettings {
       typeof record.fayanFilter === "boolean"
         ? record.fayanFilter
         : DEFAULT_SETTINGS.fayanFilter,
-    hashtagFilter:
-      typeof record.hashtagFilter === "boolean"
-        ? record.hashtagFilter
-        : DEFAULT_SETTINGS.hashtagFilter,
   };
 }
 
@@ -214,23 +204,5 @@ export function useFayanFilterEnabled(): boolean {
     subscribe,
     isFayanFilterEnabled,
     () => DEFAULT_SETTINGS.fayanFilter
-  );
-}
-
-export function isHashtagFilterEnabled(): boolean {
-  return readSettings().hashtagFilter;
-}
-
-export function setHashtagFilterEnabled(enabled: boolean): void {
-  const current = readSettings();
-  if (current.hashtagFilter === enabled) return;
-  writeSettings({ ...current, hashtagFilter: enabled });
-}
-
-export function useHashtagFilterEnabled(): boolean {
-  return useSyncExternalStore(
-    subscribe,
-    isHashtagFilterEnabled,
-    () => DEFAULT_SETTINGS.hashtagFilter
   );
 }
