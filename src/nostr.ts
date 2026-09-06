@@ -3,11 +3,15 @@ import {
   HIDDEN_AUTHOR_PUBKEYS,
   SPAM_REPORTER_PUBKEY,
 } from "../lib/hiddenAuthors.js";
-import { hasDisplayableNoteContent } from "../lib/noteContent.js";
+import {
+  filterExcessHashtagNotes,
+  hasDisplayableNoteContent,
+} from "../lib/noteContent.js";
 import {
   TRENDING_RELAY,
   WINE_TRENDING_API,
   WINE_TRENDING_LIMIT,
+  TRENDING_FEED_NOTE_LIMIT,
   RELAY_ALIGNED_TRENDING_HOURS,
   WINE_MIN_REQUEST_INTERVAL_MS,
   EVENT_HYDRATION_RELAYS,
@@ -20,6 +24,7 @@ import {
   chunkArray,
   scoreTrendingNote,
   rankTrendingNotes,
+  limitTrendingFeed,
   type NoteEngagement,
 } from "../lib/trendingShared.js";
 import { parseKind0Profile, type Kind0Profile } from "./identity";
@@ -42,6 +47,7 @@ export {
   TRENDING_RELAY,
   WINE_TRENDING_API,
   WINE_TRENDING_LIMIT,
+  TRENDING_FEED_NOTE_LIMIT,
   RELAY_ALIGNED_TRENDING_HOURS,
   WINE_MIN_REQUEST_INTERVAL_MS,
   EVENT_HYDRATION_RELAYS,
@@ -54,7 +60,9 @@ export {
   chunkArray,
   scoreTrendingNote,
   rankTrendingNotes,
+  limitTrendingFeed,
 };
+export { countHashtagTags } from "../lib/noteContent.js";
 export type { NoteEngagement };
 
 export const PROFILE_RELAYS = [
@@ -65,12 +73,6 @@ export const PROFILE_RELAYS = [
 
 /** Per-relay cap when fetching kind-1984 spam reports for feed note ids. */
 const SPAM_REPORT_QUERY_LIMIT = 200;
-
-/**
- * Notes with this many or more distinct `t` (hashtag) tags are hidden.
- * Spammers often bury hashtags in tags without putting them in content.
- */
-const MAX_HASHTAG_TAGS = 3;
 
 /** Initial notes shown; more reveal as the sentinel scrolls into view. */
 export const WINDOW_PAGE_SIZE = 5;
@@ -98,23 +100,6 @@ export class TrendingRelayError extends Error {
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
-}
-
-/** Distinct non-empty `t` tag values on a kind 1 event (NIP-12 hashtags). */
-export function countHashtagTags(tags: string[][]): number {
-  const seen = new Set<string>();
-  for (const tag of tags) {
-    if (tag[0] !== "t") continue;
-    const value = typeof tag[1] === "string" ? tag[1].trim().toLowerCase() : "";
-    if (value) seen.add(value);
-  }
-  return seen.size;
-}
-
-function filterExcessHashtagNotes<T extends { tags: string[][] }>(
-  notes: T[]
-): T[] {
-  return notes.filter((note) => countHashtagTags(note.tags) <= MAX_HASHTAG_TAGS);
 }
 
 /** Drop blank and JSON-only kind 1 bodies (bot/protocol spam). */
@@ -676,9 +661,13 @@ async function toTrendingFeed(
   }
 
   // Rank before Fayan so reveal waves follow feed order.
+  const limited = limitTrendingFeed(
+    rankTrendingNotes(visible, engagement),
+    engagement
+  );
   const ranked: TrendingFeed = {
-    notes: rankTrendingNotes(visible, engagement),
-    engagementById: engagement,
+    notes: limited.notes,
+    engagementById: limited.engagementById,
   };
 
   if (!isFayanFilterEnabled()) return { feed: ranked };
@@ -726,7 +715,8 @@ async function fetchTrendingFeedFromApi(
 
 /**
  * Fayan / hashtag filters depend on local settings — apply after the shared
- * server blob (which already ranked + spam-filtered).
+ * server blob (already ranked, spam-filtered, and capped at 100). May yield
+ * fewer than TRENDING_FEED_NOTE_LIMIT notes when hashtag filtering removes rows.
  */
 async function applyClientFeedFilters(
   feed: TrendingFeed
@@ -738,9 +728,10 @@ async function applyClientFeedFilters(
     visible = filterExcessHashtagNotes(visible);
   }
 
+  const limited = limitTrendingFeed(visible, feed.engagementById);
   const next: TrendingFeed = {
-    notes: visible,
-    engagementById: feed.engagementById,
+    notes: limited.notes,
+    engagementById: limited.engagementById,
   };
 
   if (!isFayanFilterEnabled()) return { feed: next };
