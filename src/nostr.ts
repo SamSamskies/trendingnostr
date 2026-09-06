@@ -4,7 +4,6 @@ import {
   SPAM_REPORTER_PUBKEY,
 } from "../lib/hiddenAuthors.js";
 import {
-  filterExcessHashtagNotes,
   hasDisplayableNoteContent,
 } from "../lib/noteContent.js";
 import {
@@ -25,7 +24,9 @@ import {
   FALLBACK_PROFILE_RELAYS,
   PROFILE_RELAYS,
   RANK_MISSING_VERTEX_PROFILE_FACTOR,
+  RANK_EXCESS_HASHTAG_FACTOR,
   chunkArray,
+  excessHashtagRankFactor,
   scoreTrendingNote,
   rankTrendingNotes,
   limitTrendingFeed,
@@ -42,7 +43,6 @@ import {
 } from "./fayan";
 import {
   isFayanFilterEnabled,
-  isHashtagFilterEnabled,
   type TrendingHours,
 } from "./settings";
 
@@ -66,13 +66,15 @@ export {
   FALLBACK_PROFILE_RELAYS,
   PROFILE_RELAYS,
   RANK_MISSING_VERTEX_PROFILE_FACTOR,
+  RANK_EXCESS_HASHTAG_FACTOR,
   chunkArray,
+  excessHashtagRankFactor,
   scoreTrendingNote,
   rankTrendingNotes,
   limitTrendingFeed,
 };
 export { fetchVertexProfilePubkeys } from "../lib/vertexProfiles.js";
-export { countHashtagTags } from "../lib/noteContent.js";
+export { countHashtagTags, MAX_HASHTAG_TAGS } from "../lib/noteContent.js";
 export type { NoteEngagement };
 
 /** Per-relay cap when fetching kind-1984 spam reports for feed note ids. */
@@ -661,10 +663,6 @@ async function toTrendingFeed(
       ? withContent
       : withContent.filter((note) => !spamIds.has(note.id.toLowerCase()));
 
-  if (isHashtagFilterEnabled()) {
-    visible = filterExcessHashtagNotes(visible);
-  }
-
   // Rank before Fayan so reveal waves follow feed order.
   const limited = limitTrendingFeed(
     rankTrendingNotes(visible, engagement, { vertexProfilePubkeys }),
@@ -719,19 +717,14 @@ async function fetchTrendingFeedFromApi(
 }
 
 /**
- * Fayan / hashtag filters depend on local settings — apply after the shared
- * server blob (already ranked, spam-filtered, and capped at 100). May yield
- * fewer than TRENDING_FEED_NOTE_LIMIT notes when hashtag filtering removes rows.
+ * Fayan filter depends on local settings — apply after the shared server blob
+ * (already ranked, spam-filtered, and capped at 100).
  */
 async function applyClientFeedFilters(
   feed: TrendingFeed
 ): Promise<TrendingFeedResult> {
   // Also drop empties on the API path so stale CDN blobs clear immediately.
-  let visible = filterEmptyContentNotes(feed.notes);
-
-  if (isHashtagFilterEnabled()) {
-    visible = filterExcessHashtagNotes(visible);
-  }
+  const visible = filterEmptyContentNotes(feed.notes);
 
   const limited = limitTrendingFeed(visible, feed.engagementById);
   const next: TrendingFeed = {
