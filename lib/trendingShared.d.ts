@@ -1,6 +1,7 @@
 export declare const TRENDING_RELAY: string;
 export declare const WINE_TRENDING_API: string;
 export declare const WINE_TRENDING_LIMIT: number;
+export declare const TRENDING_FEED_NOTE_LIMIT: number;
 export declare const RELAY_ALIGNED_TRENDING_HOURS: 48;
 export declare const WINE_MIN_REQUEST_INTERVAL_MS: number;
 
@@ -40,3 +41,9 @@ export declare function rankTrendingNotes<T extends { id: string }>(
   engagementById: Record<string, NoteEngagement>,
   nowSec?: number
 ): T[];
+
+export declare function limitTrendingFeed<T extends { id: string }>(
+  notes: T[],
+  engagementById: Record<string, NoteEngagement>,
+  limit?: number
+): { notes: T[]; engagementById: Record<string, NoteEngagement> };
