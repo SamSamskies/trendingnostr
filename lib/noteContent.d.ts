@@ -4,6 +4,9 @@ export declare const MAX_HASHTAG_TAGS: number;
 /** Soft demotion starts above this many http(s) URLs in note content. */
 export declare const MAX_HTTP_LINKS: number;
 
+/** Cap kind-1 `content` in API / Runtime Cache payloads. */
+export declare const MAX_CACHED_NOTE_CONTENT_CHARS: number;
+
 /** True when the entire trimmed body is a JSON object or array. */
 export declare function isJsonOnlyContent(content: string): boolean;
 
@@ -17,3 +20,11 @@ export declare function countHashtagTags(tags: string[][] | undefined): number;
 
 /** Count of http(s) URLs in kind 1 content (occurrence count, not distinct). */
 export declare function countHttpLinks(content: string | undefined): number;
+
+/**
+ * Truncate oversized note content for cache/API payloads.
+ * Ranking must run on the full body before this (link demotion).
+ */
+export declare function trimNoteContentForCache<T extends { content?: string }>(
+  note: T
+): T;
