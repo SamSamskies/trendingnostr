@@ -4,6 +4,8 @@ export type Kind0Profile = {
   picture?: string;
   displayName?: string;
   nip05?: string;
+  /** NIP-57 lightning address (`name@domain`), lowercased when present. */
+  lud16?: string;
 };
 
 function isPrivateOrLocalHostname(hostname: string): boolean {
@@ -61,11 +63,14 @@ function parseProfileContent(content: string): Kind0Profile {
       (typeof data.name === "string" && data.name.trim()) ||
       "";
     const nip05 = typeof data.nip05 === "string" ? data.nip05.trim() : "";
+    const lud16Raw = typeof data.lud16 === "string" ? data.lud16.trim() : "";
+    const lud16 = normalizeLud16(lud16Raw) ?? "";
 
     return {
       picture: isSafeHttpUrl(picture) ? picture : undefined,
       displayName: displayName || undefined,
       nip05: nip05 || undefined,
+      lud16: lud16 || undefined,
     };
   } catch {
     return {};
@@ -86,6 +91,14 @@ const BLOCKED_NIP05_HOSTS = new Set(["nostrmag.com", "cdnsoft.net"]);
 const BLOCKED_DISPLAY_NAMES = new Set([
   "craig andrew",
   "imad from gaza🍉",
+]);
+
+/**
+ * Lightning addresses (kind 0 `lud16`) whose authors are hidden.
+ * Compared after trim + lowercase (`name@domain`).
+ */
+const BLOCKED_LUD16_ADDRESSES = new Set([
+  "solemngreece21@walletofsatoshi.com",
 ]);
 
 /** Hostname from `name@domain` (lowercased), or null if missing/malformed. */
@@ -116,10 +129,32 @@ function normalizeDisplayName(name: string): string {
   return name.trim().replace(/\s+/g, " ").toLowerCase();
 }
 
+/** Normalize lud16 for matching; null if missing/malformed. */
+function normalizeLud16(lud16: string | undefined): string | null {
+  if (!lud16) return null;
+  const trimmed = lud16.trim().toLowerCase();
+  const at = trimmed.lastIndexOf("@");
+  if (at <= 0 || at === trimmed.length - 1) return null;
+  const local = trimmed.slice(0, at).trim();
+  const host = trimmed
+    .slice(at + 1)
+    .trim()
+    .replace(/\.$/, "");
+  if (!local || !host || host.includes("@")) return null;
+  return `${local}@${host}`;
+}
+
 /** True when the profile display name is on the block list. */
 export function isBlockedDisplayName(displayName: string | undefined): boolean {
   if (!displayName) return false;
   return BLOCKED_DISPLAY_NAMES.has(normalizeDisplayName(displayName));
+}
+
+/** True when the profile lightning address is on the block list. */
+export function isBlockedLud16(lud16: string | undefined): boolean {
+  const normalized = normalizeLud16(lud16);
+  if (!normalized) return false;
+  return BLOCKED_LUD16_ADDRESSES.has(normalized);
 }
 
 export function isBlockedAuthorProfile(
@@ -127,7 +162,8 @@ export function isBlockedAuthorProfile(
 ): boolean {
   return (
     isBlockedNip05(profile?.nip05) ||
-    isBlockedDisplayName(profile?.displayName)
+    isBlockedDisplayName(profile?.displayName) ||
+    isBlockedLud16(profile?.lud16)
   );
 }
 

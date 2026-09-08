@@ -16,8 +16,12 @@ export const HIDDEN_AUTHOR_PUBKEYS = new Set([/* ... */, "lowercase-hex-pubkey"]
 
 Lowercase hex only. Imported by `src/nostr.ts` and `lib/trendingFeed.js`. Applied in `toLocatedEvents` before ranking.
 
+## Profile-attribute bans (client, after kind 0)
+
+When the user asks to ban by **lightning address (`lud16`)**, nip-05 host, or display name, append to the matching set in `src/identity.ts` (`BLOCKED_LUD16_ADDRESSES`, `BLOCKED_NIP05_HOSTS`, `BLOCKED_DISPLAY_NAMES`). Those run via `isBlockedAuthorProfile` once profiles load. Prefer also adding known pubkeys to `HIDDEN_AUTHOR_PUBKEYS` when available.
+
 ## Do not
 
-- Add `BLOCKED_PUBKEYS` (or similar) in `identity.ts` — that file is for nip-05 hosts / display names only
+- Add `BLOCKED_PUBKEYS` (or similar) in `identity.ts` — that file is for nip-05 / display names / lud16 only
 - Mute via `muteAuthor` / Settings for a site-wide ban
 - Duplicate the list in `src/nostr.ts` or `lib/trendingFeed.js`
