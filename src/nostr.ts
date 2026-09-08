@@ -25,8 +25,10 @@ import {
   PROFILE_RELAYS,
   RANK_MISSING_VERTEX_PROFILE_FACTOR,
   RANK_EXCESS_HASHTAG_FACTOR,
+  RANK_EXCESS_HTTP_LINK_FACTOR,
   chunkArray,
   excessHashtagRankFactor,
+  excessHttpLinkRankFactor,
   scoreTrendingNote,
   rankTrendingNotes,
   limitTrendingFeed,
@@ -67,14 +69,21 @@ export {
   PROFILE_RELAYS,
   RANK_MISSING_VERTEX_PROFILE_FACTOR,
   RANK_EXCESS_HASHTAG_FACTOR,
+  RANK_EXCESS_HTTP_LINK_FACTOR,
   chunkArray,
   excessHashtagRankFactor,
+  excessHttpLinkRankFactor,
   scoreTrendingNote,
   rankTrendingNotes,
   limitTrendingFeed,
 };
 export { fetchVertexProfilePubkeys } from "../lib/vertexProfiles.js";
-export { countHashtagTags, MAX_HASHTAG_TAGS } from "../lib/noteContent.js";
+export {
+  countHashtagTags,
+  countHttpLinks,
+  MAX_HASHTAG_TAGS,
+  MAX_HTTP_LINKS,
+} from "../lib/noteContent.js";
 export type { NoteEngagement };
 
 /** Per-relay cap when fetching kind-1984 spam reports for feed note ids. */

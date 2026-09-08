@@ -1,6 +1,9 @@
 /** Soft demotion starts above this many distinct `t` (hashtag) tags. */
 export declare const MAX_HASHTAG_TAGS: number;
 
+/** Soft demotion starts above this many http(s) URLs in note content. */
+export declare const MAX_HTTP_LINKS: number;
+
 /** True when the entire trimmed body is a JSON object or array. */
 export declare function isJsonOnlyContent(content: string): boolean;
 
@@ -11,3 +14,6 @@ export declare function hasDisplayableNoteContent(note: {
 
 /** Distinct non-empty `t` tag values on a kind 1 event (NIP-12 hashtags). */
 export declare function countHashtagTags(tags: string[][] | undefined): number;
+
+/** Count of http(s) URLs in kind 1 content (occurrence count, not distinct). */
+export declare function countHttpLinks(content: string | undefined): number;

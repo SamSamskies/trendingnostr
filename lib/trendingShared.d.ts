@@ -27,6 +27,7 @@ export declare const RANK_AGE_OFFSET_HOURS: number;
 export declare const RANK_GRAVITY: number;
 export declare const RANK_MISSING_VERTEX_PROFILE_FACTOR: number;
 export declare const RANK_EXCESS_HASHTAG_FACTOR: number;
+export declare const RANK_EXCESS_HTTP_LINK_FACTOR: number;
 
 export declare function chunkArray<T>(array: T[], chunkSize: number): T[][];
 
@@ -47,15 +48,27 @@ export type RankTrendingNotesOptions = TrendingScoreOptions & {
 
 export declare function excessHashtagRankFactor(hashtagCount: number): number;
 
+export declare function excessHttpLinkRankFactor(linkCount: number): number;
+
 export declare function scoreTrendingNote(
-  note: { created_at: number; pubkey?: string; tags?: string[][] },
+  note: {
+    created_at: number;
+    pubkey?: string;
+    tags?: string[][];
+    content?: string;
+  },
   engagement: NoteEngagement | undefined,
   nowSec?: number,
   options?: TrendingScoreOptions
 ): number;
 
 export declare function rankTrendingNotes<
-  T extends { id: string; pubkey?: string; tags?: string[][] },
+  T extends {
+    id: string;
+    pubkey?: string;
+    tags?: string[][];
+    content?: string;
+  },
 >(
   notes: T[],
   engagementById: Record<string, NoteEngagement>,
