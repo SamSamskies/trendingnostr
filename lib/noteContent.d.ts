@@ -1,4 +1,7 @@
-/** Soft demotion starts above this many distinct `t` (hashtag) tags. */
+/**
+ * Soft demotion starts above this many distinct hashtags (`t` tags or `#…`
+ * in content).
+ */
 export declare const MAX_HASHTAG_TAGS: number;
 
 /** Soft demotion starts above this many http(s) URLs in note content. */
@@ -17,6 +20,19 @@ export declare function hasDisplayableNoteContent(note: {
 
 /** Distinct non-empty `t` tag values on a kind 1 event (NIP-12 hashtags). */
 export declare function countHashtagTags(tags: string[][] | undefined): number;
+
+/** Distinct `#hashtag` tokens in kind 1 content (lowercase). */
+export declare function countHashtagsInContent(
+  content: string | undefined
+): number;
+
+/**
+ * Hashtag count for ranking demotion: max of NIP-12 `t` tags and `#…` in content.
+ */
+export declare function countNoteHashtags(note: {
+  tags?: string[][];
+  content?: string;
+}): number;
 
 /** Count of http(s) URLs in kind 1 content (occurrence count, not distinct). */
 export declare function countHttpLinks(content: string | undefined): number;
