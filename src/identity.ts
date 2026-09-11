@@ -91,6 +91,7 @@ const BLOCKED_NIP05_HOSTS = new Set(["nostrmag.com", "cdnsoft.net"]);
 const BLOCKED_DISPLAY_NAMES = new Set([
   "craig andrew",
   "imad from gaza🍉",
+  "rwatimes",
 ]);
 
 /**
