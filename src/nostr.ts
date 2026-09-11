@@ -80,6 +80,8 @@ export {
 export { fetchVertexProfilePubkeys } from "../lib/vertexProfiles.js";
 export {
   countHashtagTags,
+  countHashtagsInContent,
+  countNoteHashtags,
   countHttpLinks,
   MAX_HASHTAG_TAGS,
   MAX_HTTP_LINKS,
