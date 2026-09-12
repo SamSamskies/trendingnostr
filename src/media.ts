@@ -137,6 +137,73 @@ function youtubeStartSeconds(raw: string): number | null {
   return hours * 3600 + minutes * 60 + seconds;
 }
 
+const NOSTR_BUILD_AUDIO_EXT = new Set([
+  "mp3",
+  "m4a",
+  "ogg",
+  "opus",
+  "wav",
+  "flac",
+  "aac",
+]);
+
+export type NostrBuildEmbed = {
+  src: string;
+  /** Audio players are short (oEmbed ~120px); video uses the default embed height. */
+  variant: "audio" | "video";
+};
+
+/** Fill the iframe; their player treats unit-bearing h/w as CSS frame size. */
+function withNostrBuildFrameParams(embed: URL): URL {
+  if (!embed.searchParams.has("h")) embed.searchParams.set("h", "100%");
+  if (!embed.searchParams.has("w")) embed.searchParams.set("w", "100%");
+  return embed;
+}
+
+/**
+ * Branded nostr.build media player (`e.nostr.build`), including converting
+ * direct `a.nostr.build` audio files into the player URL.
+ */
+export function nostrBuildEmbedUrl(raw: string): NostrBuildEmbed | null {
+  const url = normalizeHttpUrl(raw);
+
+  try {
+    const parsed = new URL(url);
+    const host = parsed.hostname.replace(/^www\./i, "").toLowerCase();
+    const segments = parsed.pathname.split("/").filter(Boolean);
+
+    if (host === "e.nostr.build") {
+      if (segments.length !== 1) return null;
+      const mediaId = segments[0];
+      // Player ids look like `a_…_mp3` / `v_…_mp4`.
+      if (!/^[a-z]_/i.test(mediaId)) return null;
+      const variant = mediaId.toLowerCase().startsWith("a_") ? "audio" : "video";
+      return { src: withNostrBuildFrameParams(parsed).href, variant };
+    }
+
+    if (host === "a.nostr.build") {
+      if (segments.length !== 1) return null;
+      const file = segments[0];
+      const dot = file.lastIndexOf(".");
+      if (dot <= 0) return null;
+      const id = file.slice(0, dot);
+      const ext = file.slice(dot + 1).toLowerCase();
+      if (!id || !NOSTR_BUILD_AUDIO_EXT.has(ext)) return null;
+
+      const embed = new URL(`https://e.nostr.build/a_${id}_${ext}`);
+      for (const key of ["t", "by", "viz", "bg"]) {
+        const value = parsed.searchParams.get(key);
+        if (value) embed.searchParams.set(key, value);
+      }
+      return { src: withNostrBuildFrameParams(embed).href, variant: "audio" };
+    }
+
+    return null;
+  } catch {
+    return null;
+  }
+}
+
 /** Build a youtube.com/embed URL for watch, youtu.be, shorts, and live links. */
 export function youtubeEmbedUrl(raw: string): string | null {
   const url = normalizeHttpUrl(raw);
