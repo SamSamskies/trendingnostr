@@ -1101,6 +1101,19 @@ a.note-quote-author-name:hover {
   border: 0;
 }
 
+/*
+ * nostr.build audio: square cover + controls. Their player switches to the
+ * compact "backdrop" layout below 180px tall (oEmbed's 120px), which stacks
+ * controls over the visualizer — keep this at least that tall.
+ */
+.note-embed-audio {
+  /* Cap width so max-height can't break the 1:1 ratio on short viewports. */
+  width: min(100%, min(70vh, 28rem));
+  height: auto;
+  aspect-ratio: 1 / 1;
+  margin-inline: auto;
+}
+
 .note-link-preview {
   display: flex;
   align-items: stretch;

@@ -6,6 +6,7 @@ import {
   hyperlinkRegex,
   newlineRegex,
   normalizeHttpUrl,
+  nostrBuildEmbedUrl,
   youtubeEmbedUrl,
 } from "./media";
 import {
@@ -218,6 +219,30 @@ function QuoteBody({
               src={convertedUrl}
               loading="lazy"
               title="WavLake Embed"
+            />
+          ),
+        });
+        continue;
+      }
+
+      const nostrBuild = nostrBuildEmbedUrl(part);
+      if (nostrBuild) {
+        tokens.push({
+          type: "node",
+          node: (
+            <iframe
+              key={index}
+              className={
+                nostrBuild.variant === "audio"
+                  ? "note-embed note-embed-audio"
+                  : "note-embed"
+              }
+              src={nostrBuild.src}
+              loading="lazy"
+              title="nostr.build media player"
+              allow="autoplay; fullscreen; encrypted-media; picture-in-picture"
+              allowFullScreen
+              referrerPolicy="strict-origin-when-cross-origin"
             />
           ),
         });
