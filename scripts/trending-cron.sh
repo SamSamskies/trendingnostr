@@ -22,7 +22,8 @@
 #                                   # (needed for protected preview deploys)
 #   TRENDING_WARM_SECRET=...        # must match Vercel env if set; forces rebuild
 #                                   # into Runtime Cache (cron uses ?_warm=1 so
-#                                   # CDN cannot serve a fresh HIT instead)
+#                                   # CDN cannot serve a fresh HIT instead).
+#                                   # If unset, loaded from repo .env.local.
 #   SPAM_CLASSIFY=1                 # opt-in: local Ollama classify after warm (default off)
 #   SPAM_OLLAMA_MODEL=gemma4:e4b
 #   OLLAMA_HOST=http://127.0.0.1:11434
@@ -40,6 +41,30 @@ DEFAULT_HOURS="4,12,24,48"
 DEFAULT_INTERVAL=300
 DEFAULT_TIMEOUT=90
 DEFAULT_LOG_DIR="${HOME}/Library/Logs/trendingnostr"
+
+# If TRENDING_WARM_SECRET is unset, read it from repo .env.local (export wins).
+if [[ -z "${TRENDING_WARM_SECRET:-}" && -f "$REPO_ROOT/.env.local" ]]; then
+  while IFS= read -r line || [[ -n "$line" ]]; do
+    line="${line#"${line%%[![:space:]]*}"}"
+    line="${line%"${line##*[![:space:]]}"}"
+    [[ -z "$line" || "$line" == \#* ]] && continue
+    [[ "$line" == TRENDING_WARM_SECRET=* ]] || continue
+    value="${line#TRENDING_WARM_SECRET=}"
+    value="${value#"${value%%[![:space:]]*}"}"
+    value="${value%"${value##*[![:space:]]}"}"
+    if [[ ${#value} -ge 2 ]]; then
+      if [[ ( "${value:0:1}" == '"' && "${value: -1}" == '"' ) ||
+            ( "${value:0:1}" == "'" && "${value: -1}" == "'" ) ]]; then
+        value="${value:1:${#value}-2}"
+      fi
+    fi
+    if [[ -n "$value" ]]; then
+      TRENDING_WARM_SECRET="$value"
+      export TRENDING_WARM_SECRET
+    fi
+    break
+  done <"$REPO_ROOT/.env.local"
+fi
 
 HOURS="${TRENDING_CRON_HOURS:-$DEFAULT_HOURS}"
 INTERVAL_SEC="${TRENDING_CRON_INTERVAL_SEC:-$DEFAULT_INTERVAL}"
