@@ -100,6 +100,7 @@ const BLOCKED_DISPLAY_NAMES = new Set([
  */
 const BLOCKED_LUD16_ADDRESSES = new Set([
   "solemngreece21@walletofsatoshi.com",
+  "blindray60@walletofsatoshi.com",
 ]);
 
 /** Hostname from `name@domain` (lowercased), or null if missing/malformed. */
