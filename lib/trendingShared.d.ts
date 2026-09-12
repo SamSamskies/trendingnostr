@@ -28,6 +28,7 @@ export declare const RANK_GRAVITY: number;
 export declare const RANK_MISSING_VERTEX_PROFILE_FACTOR: number;
 export declare const RANK_EXCESS_HASHTAG_FACTOR: number;
 export declare const RANK_EXCESS_HTTP_LINK_FACTOR: number;
+export declare const RANK_DOWNRANKED_LINK_HOST_FACTOR: number;
 
 export declare function chunkArray<T>(array: T[], chunkSize: number): T[][];
 
