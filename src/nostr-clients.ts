@@ -69,6 +69,13 @@ export const NOSTR_CLIENTS: NostrClient[] = [
     profileUrl: "https://primal.net/p/{code}",
   },
   {
+    id: "nostrich",
+    name: "Nostrich",
+    platform: "web",
+    url: "https://nostrich.org/e/{code}",
+    profileUrl: "https://nostrich.org/p/{code}",
+  },
+  {
     id: "coracle",
     name: "Coracle",
     platform: "web",
