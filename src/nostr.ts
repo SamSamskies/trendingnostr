@@ -26,6 +26,7 @@ import {
   RANK_MISSING_VERTEX_PROFILE_FACTOR,
   RANK_EXCESS_HASHTAG_FACTOR,
   RANK_EXCESS_HTTP_LINK_FACTOR,
+  RANK_DOWNRANKED_LINK_HOST_FACTOR,
   chunkArray,
   excessHashtagRankFactor,
   excessHttpLinkRankFactor,
@@ -70,6 +71,7 @@ export {
   RANK_MISSING_VERTEX_PROFILE_FACTOR,
   RANK_EXCESS_HASHTAG_FACTOR,
   RANK_EXCESS_HTTP_LINK_FACTOR,
+  RANK_DOWNRANKED_LINK_HOST_FACTOR,
   chunkArray,
   excessHashtagRankFactor,
   excessHttpLinkRankFactor,
@@ -83,8 +85,10 @@ export {
   countHashtagsInContent,
   countNoteHashtags,
   countHttpLinks,
+  hasDownrankedLinkHost,
   MAX_HASHTAG_TAGS,
   MAX_HTTP_LINKS,
+  DOWNRANKED_LINK_HOSTS,
 } from "../lib/noteContent.js";
 export type { NoteEngagement };
 

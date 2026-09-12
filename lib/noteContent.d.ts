@@ -7,6 +7,12 @@ export declare const MAX_HASHTAG_TAGS: number;
 /** Soft demotion starts above this many http(s) URLs in note content. */
 export declare const MAX_HTTP_LINKS: number;
 
+/**
+ * Hostnames whose links heavily demote a note in ranking.
+ * Matched case-insensitively, including subdomains.
+ */
+export declare const DOWNRANKED_LINK_HOSTS: ReadonlySet<string>;
+
 /** Cap kind-1 `content` in API / Runtime Cache payloads. */
 export declare const MAX_CACHED_NOTE_CONTENT_CHARS: number;
 
@@ -36,6 +42,14 @@ export declare function countNoteHashtags(note: {
 
 /** Count of http(s) URLs in kind 1 content (occurrence count, not distinct). */
 export declare function countHttpLinks(content: string | undefined): number;
+
+/**
+ * True when content has an http(s) URL whose host is in DOWNRANKED_LINK_HOSTS
+ * (exact match or subdomain).
+ */
+export declare function hasDownrankedLinkHost(
+  content: string | undefined
+): boolean;
 
 /**
  * Truncate oversized note content for cache/API payloads.
