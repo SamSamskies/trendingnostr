@@ -11,6 +11,7 @@ import {
   WINE_TRENDING_API,
   WINE_TRENDING_LIMIT,
   TRENDING_FEED_NOTE_LIMIT,
+  TRENDING_FEED_NOTE_LIMIT_4H,
   RELAY_ALIGNED_TRENDING_HOURS,
   WINE_MIN_REQUEST_INTERVAL_MS,
   EVENT_HYDRATION_RELAYS,
@@ -30,6 +31,7 @@ import {
   chunkArray,
   excessHashtagRankFactor,
   excessHttpLinkRankFactor,
+  trendingFeedNoteLimit,
   scoreTrendingNote,
   rankTrendingNotes,
   limitTrendingFeed,
@@ -56,6 +58,8 @@ export {
   WINE_TRENDING_API,
   WINE_TRENDING_LIMIT,
   TRENDING_FEED_NOTE_LIMIT,
+  TRENDING_FEED_NOTE_LIMIT_4H,
+  trendingFeedNoteLimit,
   RELAY_ALIGNED_TRENDING_HOURS,
   WINE_MIN_REQUEST_INTERVAL_MS,
   EVENT_HYDRATION_RELAYS,
@@ -664,7 +668,8 @@ function attachFayanReveal(feed: TrendingFeed): TrendingFeedResult {
 
 async function toTrendingFeed(
   notes: LocatedEvent[],
-  engagementById: Record<string, NoteEngagement>
+  engagementById: Record<string, NoteEngagement>,
+  hours: TrendingHours
 ): Promise<TrendingFeedResult> {
   const withContent = filterEmptyContentNotes(notes);
   const [engagement, spamIds, vertexProfilePubkeys] = await Promise.all([
@@ -681,7 +686,8 @@ async function toTrendingFeed(
   // Rank before Fayan so reveal waves follow feed order.
   const limited = limitTrendingFeed(
     rankTrendingNotes(visible, engagement, { vertexProfilePubkeys }),
-    engagement
+    engagement,
+    trendingFeedNoteLimit(hours)
   );
   const ranked: TrendingFeed = {
     notes: limited.notes,
@@ -733,15 +739,20 @@ async function fetchTrendingFeedFromApi(
 
 /**
  * Fayan filter depends on local settings — apply after the shared server blob
- * (already ranked, spam-filtered, and capped at 100).
+ * (already ranked, spam-filtered, and capped per window).
  */
 async function applyClientFeedFilters(
-  feed: TrendingFeed
+  feed: TrendingFeed,
+  hours: TrendingHours
 ): Promise<TrendingFeedResult> {
   // Also drop empties on the API path so stale CDN blobs clear immediately.
   const visible = filterEmptyContentNotes(feed.notes);
 
-  const limited = limitTrendingFeed(visible, feed.engagementById);
+  const limited = limitTrendingFeed(
+    visible,
+    feed.engagementById,
+    trendingFeedNoteLimit(hours)
+  );
   const next: TrendingFeed = {
     notes: limited.notes,
     engagementById: limited.engagementById,
@@ -769,7 +780,7 @@ export async function fetchTrendingFeed(
 ): Promise<TrendingFeedResult> {
   const cached = await fetchTrendingFeedFromApi(hours);
   if (cached) {
-    return applyClientFeedFilters(cached);
+    return applyClientFeedFilters(cached, hours);
   }
 
   if (hours !== RELAY_ALIGNED_TRENDING_HOURS) {
@@ -795,14 +806,15 @@ export async function fetchTrendingFeed(
       const wine = await winePromise;
       return toTrendingFeed(
         toLocatedEvents(events, [TRENDING_RELAY]),
-        wine?.engagementById ?? {}
+        wine?.engagementById ?? {},
+        hours
       );
     }
 
     // Genuine empty reply from a healthy subscription.
     if (closeReason === EOSE_CLOSE_REASON) {
       const wine = await winePromise;
-      return toTrendingFeed([], wine?.engagementById ?? {});
+      return toTrendingFeed([], wine?.engagementById ?? {}, hours);
     }
 
     if (isRateLimitedCloseReason(closeReason)) {
@@ -835,7 +847,8 @@ export async function fetchTrendingFeed(
     // Successful fallback (including empty) is the feed state — don't mask as relay error.
     return toTrendingFeed(
       await hydrateTrendingNotesFromWine(wine),
-      wine.engagementById
+      wine.engagementById,
+      hours
     );
   } catch {
     // Prefer the original relay error if hydration also fails.
@@ -859,7 +872,8 @@ async function fetchTrendingFeedFromWine(
   }
   return toTrendingFeed(
     await hydrateTrendingNotesFromWine(wine),
-    wine.engagementById
+    wine.engagementById,
+    hours
   );
 }
 
