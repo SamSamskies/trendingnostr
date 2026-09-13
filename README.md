@@ -50,14 +50,12 @@ The public endpoint is `/api/inference`. The current implementation calls Gemini
 
 The Mac Mini cron rebuilds Runtime Cache via a distinct URL key (`&_warm=1` + `x-trending-refresh`; `Pragma: no-cache` does not bypass a fresh CDN HIT), then warms the public CDN entry. A first visit will still show a network `200` (CDN may be `MISS` or `HIT`); look at `X-Trending-Cache` and Time, not “from disk cache”. The browser prefers this blob and falls back to the legacy client-side path if the API is down.
 
-After each successful warm, the same cron can optionally classify **new** notes with local Ollama (`SPAM_CLASSIFY=1`; default **off**). Prefer a manual pass: `npm run classify:spam` (or ask the agent via the `run-spam-classify` skill). When enabled, it POSTs spam event ids to `/api/spam-verdicts` and re-warms if anything was added. Fail-open if Ollama is down.
-
 ### Mac Mini cache warmer
 
 Keep the production CDN warm from a Mac that stays awake:
 
 ```sh
-npm run cron:prod:run     # warm once (+ classify only if SPAM_CLASSIFY=1)
+npm run cron:prod:run     # warm once
 npm run cron:prod:start   # launchd every 5 minutes (re-run after script changes)
 npm run cron:prod:start -- --interval 75m   # custom StartInterval (also -i 4500)
 npm run cron:status
@@ -71,15 +69,11 @@ npm run cron:stop
 
 **Hobby Runtime Cache quota:** each warm that changes the feed does a `runtimeCache.set` per hours window. Vercel bills those as **write units** (8 KB chunks), not as the operation counts shown under Observability → Runtime Cache. Cached note payloads omit `sig` (unused in the UI; tags are kept). Unchanged rebuilds skip `set` so stable windows do not rewrite the blob (TTL is not refreshed on skip). On Hobby the included allotment is small (~200k write units / rolling 30 days); warming `4,12,24,48` every 5 minutes can still burn through it when the feed moves often. Prefer a longer `--interval` (and raise `RUNTIME_TTL_SEC` / CDN `s-maxage` if the interval exceeds the current TTLs), fewer `TRENDING_CRON_HOURS`, or stop the cron when idle. Usage emails are the main quota signal on Hobby; `vercel usage` 404s without a Pro billing cycle.
 
-Optional: set the same `TRENDING_WARM_SECRET` in Vercel project env and on the Mac Mini so only your cron can force a rebuild (`x-trending-refresh`). Not required for `/api/spam-verdicts`.
-
-Clear bad LLM flags: `npm run spam:unflag:all` (no secret). Then `npm run cron:prod:run` if you want a rewarm.
-
-Spam classify knobs (Mac Mini): `SPAM_CLASSIFY=1` to enable on each warm (default off), `SPAM_OLLAMA_MODEL`, `OLLAMA_HOST`, `SPAM_CONFIDENCE`, `SPAM_CLASSIFY_MAX`. Manual: `npm run classify:spam`. Eval: `npm run eval:spam`. Clear flags: `npm run spam:unflag:all`.
+Optional: set the same `TRENDING_WARM_SECRET` in Vercel project env and on the Mac Mini so only your cron can force a rebuild (`x-trending-refresh`).
 
 For a preview or other host: `TRENDING_CRON_BASE_URL=https://… npm run cron:run` (and `cron:start -- --interval 75m`).
 
-Logs: `~/Library/Logs/trendingnostr/warm.jsonl` (+ `spam-classified.json` for local id cache). Optional: `TRENDING_CRON_HOURS`, `TRENDING_CRON_INTERVAL_SEC` (default interval; overridden by `--interval` on start).
+Logs: `~/Library/Logs/trendingnostr/warm.jsonl`. Optional: `TRENDING_CRON_HOURS`, `TRENDING_CRON_INTERVAL_SEC` (default interval; overridden by `--interval` on start).
 
 Protected **preview** deploys return `401 Protected Deployment`. Either:
 
