@@ -24,11 +24,6 @@
 #                                   # into Runtime Cache (cron uses ?_warm=1 so
 #                                   # CDN cannot serve a fresh HIT instead).
 #                                   # If unset, loaded from repo .env.local.
-#   SPAM_CLASSIFY=1                 # opt-in: local Ollama classify after warm (default off)
-#   SPAM_OLLAMA_MODEL=gemma4:e4b
-#   OLLAMA_HOST=http://127.0.0.1:11434
-#   SPAM_CONFIDENCE=0.9
-#   SPAM_CLASSIFY_MAX=80
 
 set -euo pipefail
 
@@ -79,10 +74,6 @@ BROWSER_ACCEPT_ENCODING="gzip, deflate, br, zstd"
 LOG_FILE="$LOG_DIR/warm.jsonl"
 STATE_FILE="$LOG_DIR/state.env"
 PLIST_PATH="${HOME}/Library/LaunchAgents/${LABEL}.plist"
-# Local Ollama spam classify after warm (opt-in; prefer `npm run classify:spam`).
-SPAM_CLASSIFY="${SPAM_CLASSIFY:-0}"
-SPAM_OLLAMA_MODEL="${SPAM_OLLAMA_MODEL:-gemma4:e4b}"
-CLASSIFY_SCRIPT="$SCRIPT_DIR/classify-trending-spam.mjs"
 
 # launchd uses a minimal PATH; include node managers (volta/fnm/nvm) + current node dir.
 CRON_PATH_PREFIX=""
@@ -307,24 +298,6 @@ NODE
   printf '%s\n' "$line"
 }
 
-# Classify new trending notes via local Ollama; prints one JSON line.
-# Always exits 0 from Node (fail-open); this wrapper returns 0 unless node missing.
-classify_spam() {
-  if [[ ! -f "$CLASSIFY_SCRIPT" ]]; then
-    printf '%s\n' "{\"ok\":false,\"error\":\"missing_classify_script\"}"
-    return 0
-  fi
-  set +e
-  SPAM_OLLAMA_MODEL="$SPAM_OLLAMA_MODEL" \
-  TRENDING_CRON_BASE_URL="$TRENDING_CRON_BASE_URL" \
-  TRENDING_WARM_SECRET="$WARM_SECRET" \
-  TRENDING_CRON_BYPASS_SECRET="$BYPASS_SECRET" \
-  TRENDING_CRON_LOG_DIR="$LOG_DIR" \
-  node "$CLASSIFY_SCRIPT"
-  set -e
-  return 0
-}
-
 warm_all_hours() {
   WARM_ALL_OK=true
   WARM_NOTES_TOTAL=0
@@ -366,33 +339,6 @@ cmd_run() {
   started="$(date +%s)"
 
   warm_all_hours
-
-  # After a successful warm, classify new notes and re-warm if spam was posted.
-  if [[ "$WARM_ALL_OK" == "true" && "$SPAM_CLASSIFY" != "0" && "$SPAM_CLASSIFY" != "false" ]]; then
-    local classify_line rewarm
-    classify_line="$(classify_spam)"
-    echo "$classify_line"
-    append_log "$classify_line"
-    rewarm="$(printf '%s' "$classify_line" | node -e '
-      let s="";
-      process.stdin.on("data", d => s += d);
-      process.stdin.on("end", () => {
-        try {
-          const j = JSON.parse(s.trim());
-          process.stdout.write(j.rewarm ? "1" : "0");
-        } catch {
-          process.stdout.write("0");
-        }
-      });
-    ')"
-    if [[ "$rewarm" == "1" ]]; then
-      local rewarm_line
-      rewarm_line="{\"ts\":\"$(iso_now)\",\"phase\":\"rewarm_after_spam\",\"ok\":true}"
-      echo "$rewarm_line"
-      append_log "$rewarm_line"
-      warm_all_hours
-    fi
-  fi
 
   local now duration_ms
   now="$(date +%s)"
@@ -444,12 +390,6 @@ write_plist() {
     <string>${BYPASS_SECRET}</string>
     <key>TRENDING_WARM_SECRET</key>
     <string>${WARM_SECRET}</string>
-    <key>SPAM_CLASSIFY</key>
-    <string>${SPAM_CLASSIFY}</string>
-    <key>SPAM_OLLAMA_MODEL</key>
-    <string>${SPAM_OLLAMA_MODEL}</string>
-    <key>OLLAMA_HOST</key>
-    <string>${OLLAMA_HOST:-http://127.0.0.1:11434}</string>
     <key>PATH</key>
     <string>${CRON_PATH}</string>
   </dict>

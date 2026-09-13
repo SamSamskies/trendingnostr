@@ -2,9 +2,6 @@
   "functions": {
     "api/trending.js": {
       "maxDuration": 60
-    },
-    "api/spam-verdicts.js": {
-      "maxDuration": 30
     }
   }
 }
