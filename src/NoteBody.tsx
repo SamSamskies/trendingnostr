@@ -1,7 +1,9 @@
 import { useLayoutEffect, useRef, useState, type ReactNode } from "react";
 
 /** Must match `--note-body-collapsed-max` in index.css. */
-const COLLAPSED_MAX_HEIGHT_PX = 440;
+const COLLAPSED_MAX_HEIGHT_PX = 580;
+/** Only collapse when content exceeds the cap by more than this (avoids "Show more" for a line or two). */
+const COLLAPSED_OVERFLOW_SLACK_PX = 56;
 
 /**
  * Lazy images/videos often have 0 height until loaded. Estimate a 9:16 box
@@ -91,7 +93,9 @@ export function NoteBody({ children }: { children: ReactNode }) {
 
     const measure = () => {
       const height = el.scrollHeight + unloadedMediaExtraHeight(el);
-      setOverflows(height > COLLAPSED_MAX_HEIGHT_PX + 1);
+      setOverflows(
+        height > COLLAPSED_MAX_HEIGHT_PX + COLLAPSED_OVERFLOW_SLACK_PX
+      );
     };
 
     measure();
