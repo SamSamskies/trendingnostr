@@ -5,7 +5,6 @@ import {
   isInferenceAvailable,
   isInferenceError,
   type ContentPart,
-  type Inference,
   type InferenceRequest,
   type Message,
 } from "ipa-tools";
@@ -40,10 +39,6 @@ const WEB_SEARCH_TOOL = { type: "web_search" } as const;
 const DETECT_FAST_MS = 8000;
 const DETECT_FAST_INTERVAL_MS = 50;
 
-type InferenceWithExperimental = Inference & {
-  experimental?: { request?: Inference["request"] };
-};
-
 type StreamChunk = {
   type: string;
   content?: string;
@@ -55,14 +50,6 @@ const hostedBackend = createHostedBackend();
 const inferenceClient = createInference({
   fallbacks: [hostedBackend],
 });
-
-function lookupInference(): InferenceWithExperimental | undefined {
-  const inference = window.inference as InferenceWithExperimental | undefined;
-  if (inference == null || typeof inference.request !== "function") {
-    return undefined;
-  }
-  return inference;
-}
 
 export function isSupportedContext(): boolean {
   return window.isSecureContext && location.origin !== "null";
@@ -104,8 +91,7 @@ function inferenceFeatures() {
 export function canSearchWeb(): boolean {
   if (!isWebSearchEnabled()) return false;
   if (isInferenceAvailable()) {
-    if (inferenceFeatures().webSearch) return true;
-    return typeof lookupInference()?.experimental?.request === "function";
+    return Boolean(inferenceFeatures().webSearch);
   }
   // Hosted Gemini/Gemma grounding uses Google Search when IPA is absent.
   return true;
@@ -279,27 +265,6 @@ function withIpaProxiedImageUrls(messages: Message[]): Message[] {
   });
 }
 
-function experimentalRequest(
-  inference: InferenceWithExperimental
-): Inference["request"] | undefined {
-  const experimental = inference.experimental?.request;
-  if (typeof experimental !== "function") return undefined;
-  return experimental.bind(inference.experimental);
-}
-
-/** Prefer experimental when images or unadvertised web search need it. */
-function shouldUseExperimental(
-  inference: InferenceWithExperimental,
-  hasImages: boolean,
-  wantSearch: boolean
-): boolean {
-  if (typeof inference.experimental?.request !== "function") return false;
-  if (hasImages) return true;
-  if (!wantSearch) return false;
-  if (inferenceFeatures().webSearch) return false;
-  return true;
-}
-
 async function hostedOnlyRequest(
   payload: InferenceRequest,
   onStatus?: (status: ChatStatus) => void,
@@ -322,43 +287,29 @@ export async function completeChat(options: {
 }): Promise<ChatResult> {
   const messages = options.messages as Message[];
   const hasImages = messagesHaveImageParts(options.messages);
-  const inference = lookupInference();
   const wantSearch = canSearchWeb();
   const tools = wantSearch ? [WEB_SEARCH_TOOL] : undefined;
+  const features = inferenceFeatures();
+  const ipaSupportsImages =
+    isInferenceAvailable() && Boolean(features.imageInput);
 
   const payload: InferenceRequest = {
     method: "chat",
     messages,
-    ...(tools ? { tools } : {}),
+    tools,
     signal: options.signal,
   };
 
-  if (inference && shouldUseExperimental(inference, hasImages, wantSearch)) {
-    const experimental = experimentalRequest(inference);
-    if (experimental) {
-      return consumeChat(
-        experimental,
-        hasImages
-          ? { ...payload, messages: withIpaProxiedImageUrls(messages) }
-          : payload,
-        options.onStatus,
-        options.onDelta
-      );
-    }
-  }
-
-  // Stable IPA rejects ImageParts. Prefer hosted when consented; otherwise
-  // strip images so text chat still works (URLs remain in the note text).
+  // IPA without imageInput rejects ImageParts. Prefer hosted when consented;
+  // otherwise strip images so text chat still works (URLs remain in note text).
   let requestMessages = messages;
-  if (
-    hasImages &&
-    inference &&
-    !shouldUseExperimental(inference, hasImages, wantSearch)
-  ) {
+  if (hasImages && isInferenceAvailable() && !ipaSupportsImages) {
     if (hasHostedConsent()) {
       return hostedOnlyRequest(payload, options.onStatus, options.onDelta);
     }
     requestMessages = stripImageParts(messages);
+  } else if (hasImages && ipaSupportsImages) {
+    requestMessages = withIpaProxiedImageUrls(messages);
   }
 
   return consumeChat(
@@ -366,7 +317,7 @@ export async function completeChat(options: {
     {
       method: "chat",
       messages: requestMessages,
-      ...(wantSearch && inferenceFeatures().webSearch ? { tools } : {}),
+      tools,
       signal: options.signal,
     },
     options.onStatus,
