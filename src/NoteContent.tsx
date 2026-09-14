@@ -18,7 +18,10 @@ import {
 import { isSafeHttpUrl, type Kind0Profile } from "./identity";
 import { LinkPreview } from "./LinkPreview";
 import { coalesceMedia, type NoteContentToken } from "./noteMedia";
+import { KIND_HIGHLIGHT, KIND_LONG_FORM } from "./articleMeta";
 import type { OpenInKind } from "./nostr-clients";
+import { QuotedHighlight } from "./QuotedHighlight";
+import { QuotedLongForm } from "./QuotedLongForm";
 import { QuotedNote } from "./QuotedNote";
 
 const wavlakeRegex =
@@ -149,6 +152,36 @@ function classifyPart(
           <QuotedNote
             key={index}
             noteRef={entity}
+            profiles={profiles}
+            onOpen={onOpen}
+          />
+        ),
+      };
+    }
+
+    // NIP-84 highlight quotes (italic + source attribution).
+    if (entity.type === "note" && entity.kind === KIND_HIGHLIGHT) {
+      return {
+        type: "node",
+        node: (
+          <QuotedHighlight
+            key={index}
+            noteRef={entity}
+            profiles={profiles}
+            onOpen={onOpen}
+          />
+        ),
+      };
+    }
+
+    // NIP-23 long-form article previews.
+    if (entity.type === "address" && entity.kind === KIND_LONG_FORM) {
+      return {
+        type: "node",
+        node: (
+          <QuotedLongForm
+            key={index}
+            addressRef={entity}
             profiles={profiles}
             onOpen={onOpen}
           />
