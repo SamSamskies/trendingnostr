@@ -1327,7 +1327,8 @@ async function queryPaytoOnRelays(
   return newest;
 }
 
-async function queryPaytoTags(author: string): Promise<string[][]> {
+/** null = query failed; do not cache so a later open can retry. */
+async function queryPaytoTags(author: string): Promise<string[][] | null> {
   const pool = new SimplePool();
   pool.maxWaitForConnection = RELAY_MAX_WAIT_MS;
   try {
@@ -1349,7 +1350,7 @@ async function queryPaytoTags(author: string): Promise<string[][]> {
     const outboxNewest = await queryPaytoOnRelays(pool, author, outboxOnly);
     return outboxNewest?.tags ?? [];
   } catch {
-    return [];
+    return null;
   } finally {
     pool.destroy();
   }
@@ -1360,14 +1361,14 @@ export async function fetchPaytoTags(pubkey: string): Promise<string[][]> {
   if (!/^[0-9a-f]{64}$/.test(author)) return [];
 
   const cached = readCachedPaytoTags(author);
-  if (cached) return cached;
+  if (cached !== null) return cached;
 
   const pending = paytoInflight.get(author);
   if (pending) return pending;
 
   const request = queryPaytoTags(author).then((tags) => {
-    rememberPaytoTags(author, tags);
-    return tags;
+    if (tags !== null) rememberPaytoTags(author, tags);
+    return tags ?? [];
   });
   paytoInflight.set(author, request);
   try {
