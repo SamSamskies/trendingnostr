@@ -178,9 +178,17 @@ function asNonNegInt(value: unknown): number {
  * querySync resolves with [] on connection failure, which the UI used to treat
  * as an empty feed. Track the close reason so we can retry real failures.
  */
+type RelayFilter = {
+  kinds?: number[];
+  ids?: string[];
+  authors?: string[];
+  "#d"?: string[];
+  limit?: number;
+};
+
 function queryRelayOnce(
   relays: readonly string[],
-  filter: { kinds?: number[]; ids?: string[] }
+  filter: RelayFilter
 ): Promise<{
   events: Event[];
   closeReason: string;
@@ -297,11 +305,27 @@ async function hydrateTrendingNotesFromWine(
 }
 
 const eventByIdCache = new Map<string, Promise<Event | null>>();
+const eventByAddressCache = new Map<string, Promise<Event | null>>();
+
+function mergeHydrationRelays(relayHints: readonly string[]): string[] {
+  return [
+    ...EVENT_HYDRATION_RELAYS,
+    ...relayHints
+      .map((url) => url.replace(/\/+$/, ""))
+      .filter(
+        (url) =>
+          url.startsWith("wss://") &&
+          url !== "wss://relay.nostr.band" &&
+          !(EVENT_HYDRATION_RELAYS as readonly string[]).includes(url)
+      ),
+  ];
+}
 
 /**
- * Fetch a single kind-1 note by id for quote embeds. Merges optional NIP-19
- * relay hints with the usual hydration relays. Module-level cache like link
- * previews; misses are dropped so a remount can retry.
+ * Fetch a single event by id for quote embeds. Merges optional NIP-19 relay
+ * hints with the usual hydration relays. Callers check `event.kind`.
+ * Module-level cache like link previews; misses are dropped so a remount can
+ * retry.
  */
 export function fetchEventById(
   id: string,
@@ -313,21 +337,8 @@ export function fetchEventById(
   const existing = eventByIdCache.get(normalized);
   if (existing) return existing;
 
-  const relays = [
-    ...EVENT_HYDRATION_RELAYS,
-    ...relayHints
-      .map((url) => url.replace(/\/+$/, ""))
-      .filter(
-        (url) =>
-          url.startsWith("wss://") &&
-          url !== "wss://relay.nostr.band" &&
-          !(EVENT_HYDRATION_RELAYS as readonly string[]).includes(url)
-      ),
-  ];
-
-  const pending = queryRelayOnce(relays, {
+  const pending = queryRelayOnce(mergeHydrationRelays(relayHints), {
     ids: [normalized],
-    kinds: [1],
   })
     .then(({ events }) => {
       const match =
@@ -345,6 +356,56 @@ export function fetchEventById(
     });
 
   eventByIdCache.set(normalized, pending);
+  return pending;
+}
+
+/**
+ * Fetch a parameterized replaceable event (e.g. kind 30023 long-form) by
+ * author + `d` identifier. Cache key is `kind:pubkey:identifier`.
+ */
+export function fetchEventByAddress(
+  kind: number,
+  pubkey: string,
+  identifier: string,
+  relayHints: readonly string[] = []
+): Promise<Event | null> {
+  const author = pubkey.trim().toLowerCase();
+  const d = identifier.trim();
+  if (!author || !d || !Number.isInteger(kind) || kind < 0) {
+    return Promise.resolve(null);
+  }
+
+  const cacheKey = `${kind}:${author}:${d}`;
+  const existing = eventByAddressCache.get(cacheKey);
+  if (existing) return existing;
+
+  const pending = queryRelayOnce(mergeHydrationRelays(relayHints), {
+    kinds: [kind],
+    authors: [author],
+    "#d": [d],
+    limit: 1,
+  })
+    .then(({ events }) => {
+      const match =
+        events.find(
+          (event) =>
+            event.kind === kind &&
+            event.pubkey.toLowerCase() === author &&
+            event.tags.some((tag) => tag[0] === "d" && tag[1] === d)
+        ) ?? null;
+      if (!match && eventByAddressCache.get(cacheKey) === pending) {
+        eventByAddressCache.delete(cacheKey);
+      }
+      return match;
+    })
+    .catch(() => {
+      if (eventByAddressCache.get(cacheKey) === pending) {
+        eventByAddressCache.delete(cacheKey);
+      }
+      return null;
+    });
+
+  eventByAddressCache.set(cacheKey, pending);
   return pending;
 }
 
