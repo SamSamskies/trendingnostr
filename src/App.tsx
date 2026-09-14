@@ -856,6 +856,7 @@ export default function App() {
                               return;
                             }
                             askAiRef.current?.close();
+                            setAskNote(null);
                             setTipNote(note);
                           }}
                         />
@@ -868,6 +869,7 @@ export default function App() {
                             return;
                           }
                           tipRef.current?.close();
+                          setTipNote(null);
                           setAskNote(note);
                         }}
                       />
