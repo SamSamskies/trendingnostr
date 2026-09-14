@@ -38,7 +38,7 @@ import {
   type NoteEngagement,
 } from "../lib/trendingShared.js";
 import { fetchVertexProfilePubkeys } from "../lib/vertexProfiles.js";
-import { parseKind0Profile, type Kind0Profile } from "./identity";
+import { isPrivateOrLocalHostname, parseKind0Profile, type Kind0Profile } from "./identity";
 import { PAYTO_KIND } from "./paymentTargets";
 import {
   FAYAN_CONCURRENCY,
@@ -1206,10 +1206,12 @@ function trimCache<T extends { cachedAt: number }>(
 function normalizeRelayUrl(raw: string): string | null {
   try {
     const url = new URL(raw.trim());
-    if (url.protocol !== "wss:" && url.protocol !== "ws:") return null;
+    // Author outbox hints are fetched on tip hover — wss only, no private hosts.
+    if (url.protocol !== "wss:") return null;
     if (url.username || url.password) return null;
     const host = url.hostname.toLowerCase();
     if (!host || host === "relay.nostr.band") return null;
+    if (isPrivateOrLocalHostname(host)) return null;
     url.hash = "";
     url.search = "";
     let href = url.href;
