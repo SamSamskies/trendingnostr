@@ -39,6 +39,7 @@ import {
 } from "../lib/trendingShared.js";
 import { fetchVertexProfilePubkeys } from "../lib/vertexProfiles.js";
 import { parseKind0Profile, type Kind0Profile } from "./identity";
+import { PAYTO_KIND } from "./paymentTargets";
 import {
   FAYAN_CONCURRENCY,
   fetchFayanUsers,
@@ -106,7 +107,7 @@ export const WINDOW_PREFETCH_AHEAD = 10;
 export const AUTHOR_CHUNK_SIZE = 100;
 /** Revalidate kind 0 entries after this age; stale cache is still served instantly. */
 export const PROFILE_CACHE_TTL_MS = 24 * 60 * 60 * 1000;
-const PROFILE_CACHE_STORAGE_KEY = "trendingnostr:kind0-profiles";
+const PROFILE_CACHE_STORAGE_KEY = "trendingnostr:kind0-profiles-v2";
 const PROFILE_CACHE_MAX_ENTRIES = 500;
 
 const EOSE_CLOSE_REASON = "closed automatically on eose";
@@ -1136,4 +1137,103 @@ export async function getKind0Profiles(
     found[pubkey] = record.profile;
   }
   return found;
+}
+
+/**
+ * Latest kind 10133 (NIP-A3 payto) tags for an author. Queried when the tip
+ * sheet opens — not for the whole feed. Includes Damus because many clients
+ * publish payto there and Primal/Ditto often do not mirror kind 10133.
+ */
+const PAYTO_RELAYS = [
+  ...FALLBACK_PROFILE_RELAYS,
+  "wss://relay.damus.io",
+] as const;
+
+/** Keep tip reopen snappy; payto rarely changes mid-session. */
+const PAYTO_CACHE_TTL_MS = 60 * 60 * 1000;
+const PAYTO_CACHE_MAX_ENTRIES = 100;
+
+type PaytoCacheEntry = {
+  tags: string[][];
+  cachedAt: number;
+};
+
+const paytoMemoryCache = new Map<string, PaytoCacheEntry>();
+const paytoInflight = new Map<string, Promise<string[][]>>();
+
+/** Sync cache hit for Tip drawer initial state; null if missing/stale. */
+export function readCachedPaytoTags(pubkey: string): string[][] | null {
+  const author = pubkey.trim().toLowerCase();
+  if (!/^[0-9a-f]{64}$/.test(author)) return null;
+  const entry = paytoMemoryCache.get(author);
+  if (!entry) return null;
+  if (Date.now() - entry.cachedAt > PAYTO_CACHE_TTL_MS) return null;
+  return entry.tags;
+}
+
+function rememberPaytoTags(author: string, tags: string[][]): void {
+  paytoMemoryCache.set(author, { tags, cachedAt: Date.now() });
+  if (paytoMemoryCache.size <= PAYTO_CACHE_MAX_ENTRIES) return;
+  const oldest = [...paytoMemoryCache.entries()].sort(
+    (a, b) => a[1].cachedAt - b[1].cachedAt
+  );
+  for (const [key] of oldest.slice(
+    0,
+    paytoMemoryCache.size - PAYTO_CACHE_MAX_ENTRIES
+  )) {
+    paytoMemoryCache.delete(key);
+  }
+}
+
+async function queryPaytoTags(author: string): Promise<string[][]> {
+  const pool = new SimplePool();
+  pool.maxWaitForConnection = RELAY_MAX_WAIT_MS;
+  try {
+    const settled = await Promise.allSettled(
+      PAYTO_RELAYS.map((relay) =>
+        pool.querySync(
+          [relay],
+          { kinds: [PAYTO_KIND], authors: [author], limit: 1 },
+          { maxWait: RELAY_MAX_WAIT_MS }
+        )
+      )
+    );
+
+    let newest: Event | null = null;
+    for (const result of settled) {
+      if (result.status !== "fulfilled") continue;
+      for (const event of result.value) {
+        if (event.kind !== PAYTO_KIND) continue;
+        if (event.pubkey.toLowerCase() !== author) continue;
+        if (!newest || event.created_at > newest.created_at) newest = event;
+      }
+    }
+    return newest?.tags ?? [];
+  } catch {
+    return [];
+  } finally {
+    pool.destroy();
+  }
+}
+
+export async function fetchPaytoTags(pubkey: string): Promise<string[][]> {
+  const author = pubkey.trim().toLowerCase();
+  if (!/^[0-9a-f]{64}$/.test(author)) return [];
+
+  const cached = readCachedPaytoTags(author);
+  if (cached) return cached;
+
+  const pending = paytoInflight.get(author);
+  if (pending) return pending;
+
+  const request = queryPaytoTags(author).then((tags) => {
+    rememberPaytoTags(author, tags);
+    return tags;
+  });
+  paytoInflight.set(author, request);
+  try {
+    return await request;
+  } finally {
+    paytoInflight.delete(author);
+  }
 }

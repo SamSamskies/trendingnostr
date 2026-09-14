@@ -888,6 +888,13 @@ a.note-longform-preview:hover {
     0 0 0 1px rgba(180, 83, 9, 0.12);
 }
 
+.note-tipping {
+  border-color: rgba(28, 31, 24, 0.22);
+  box-shadow:
+    var(--shadow),
+    0 0 0 1px rgba(28, 31, 24, 0.08);
+}
+
 .note-footer {
   display: flex;
   align-items: center;
@@ -928,7 +935,10 @@ a.note-longform-preview:hover {
   border: none;
 }
 
-.note-footer .ask-ai-btn {
+.note-footer-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
   flex: none;
   margin-left: auto;
 }
@@ -1563,7 +1573,8 @@ a.open-in-link:focus-visible,
   height: 1px;
 }
 
-.ask-ai-btn {
+.ask-ai-btn,
+.tip-btn {
   display: inline-flex;
   align-items: center;
   gap: 0.4rem;
@@ -1571,8 +1582,6 @@ a.open-in-link:focus-visible,
   padding: 0.32rem 0.7rem 0.32rem 0.55rem;
   border: 1px solid transparent;
   border-radius: 999px;
-  background: var(--accent-soft);
-  color: var(--accent);
   font: inherit;
   font-family: var(--font-display);
   font-weight: 600;
@@ -1581,18 +1590,267 @@ a.open-in-link:focus-visible,
   cursor: pointer;
 }
 
+.ask-ai-btn {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+.tip-btn {
+  background: transparent;
+  color: var(--muted);
+  border-color: var(--line);
+}
+
 .ask-ai-btn:hover {
   background: rgba(180, 83, 9, 0.16);
+}
+
+.tip-btn:hover {
+  color: var(--ink);
+  background: var(--accent-soft);
 }
 
 .ask-ai-btn[aria-pressed="true"] {
   box-shadow: inset 0 0 0 1px var(--accent);
 }
 
-.ask-ai-sparkle {
+.tip-btn[aria-pressed="true"] {
+  color: var(--accent);
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.ask-ai-sparkle,
+.tip-btn-icon {
   display: block;
   width: 1.05rem;
   height: 1.05rem;
+}
+
+.tip-dialog {
+  width: min(26.5rem, 100vw);
+  height: 100%;
+  max-width: none;
+  max-height: 100%;
+  margin: 0;
+  padding: 0;
+  border: none;
+  border-left: 3px solid var(--accent);
+  background: var(--panel);
+  color: var(--ink);
+  box-shadow: var(--shadow);
+  inset: 0 0 0 auto;
+}
+
+.tip-dialog[open] {
+  display: flex;
+  flex-direction: column;
+  animation: tip-drawer-in 0.42s cubic-bezier(0.32, 0.72, 0, 1) both;
+}
+
+.tip-dialog[open].is-closing {
+  pointer-events: none;
+  animation: tip-drawer-out 0.32s cubic-bezier(0.4, 0, 1, 1) both;
+}
+
+.tip-dialog:modal {
+  max-width: none;
+  max-height: 100%;
+}
+
+.tip-dialog::backdrop {
+  background: rgba(28, 31, 24, 0.4);
+}
+
+.tip-dialog[open]::backdrop {
+  animation: tip-backdrop-in 0.38s ease both;
+}
+
+.tip-dialog[open].is-closing::backdrop {
+  animation: tip-backdrop-out 0.28s ease both;
+}
+
+@keyframes tip-drawer-in {
+  from {
+    transform: translate3d(100%, 0, 0);
+  }
+}
+
+@keyframes tip-drawer-out {
+  to {
+    transform: translate3d(100%, 0, 0);
+  }
+}
+
+@keyframes tip-backdrop-in {
+  from {
+    opacity: 0;
+  }
+}
+
+@keyframes tip-backdrop-out {
+  to {
+    opacity: 0;
+  }
+}
+
+.tip-sheet {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  width: 100%;
+  min-height: 0;
+}
+
+.tip-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 1rem 1rem 0.85rem;
+  border-bottom: 1px solid var(--line);
+}
+
+.tip-heading {
+  min-width: 0;
+}
+
+.tip-header h2 {
+  margin: 0;
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 1.35rem;
+  letter-spacing: -0.03em;
+}
+
+.tip-subtitle {
+  margin: 0.25rem 0 0;
+  color: var(--muted);
+  font-size: 0.88rem;
+}
+
+.tip-close {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 2.15rem;
+  height: 2.15rem;
+  margin: 0;
+  padding: 0;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+}
+
+.tip-close:hover {
+  color: var(--ink);
+  background: var(--accent-soft);
+}
+
+.tip-close:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.tip-body {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: 1rem 1rem 1.25rem;
+}
+
+.tip-method-label,
+.tip-status,
+.tip-empty {
+  margin: 0 0 0.85rem;
+  text-align: center;
+  color: var(--muted);
+  font-size: 0.88rem;
+}
+
+.tip-method-label {
+  margin-bottom: 0.65rem;
+  color: var(--ink);
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: 0.92rem;
+}
+
+.tip-methods {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 0.4rem;
+  margin: 0 0 1rem;
+}
+
+.tip-method {
+  margin: 0;
+  padding: 0.28rem 0.7rem;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: none;
+  font: inherit;
+  font-size: 0.78rem;
+  color: var(--muted);
+  cursor: pointer;
+}
+
+.tip-method[aria-selected="true"] {
+  background: var(--accent-soft);
+  color: var(--accent);
+  border-color: transparent;
+}
+
+.tip-qr-wrap {
+  display: flex;
+  justify-content: center;
+  width: fit-content;
+  margin: 0 auto 0.85rem;
+  padding: 0.7rem;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: #fff;
+}
+
+.tip-qr {
+  display: block;
+  width: 11.5rem;
+  height: 11.5rem;
+}
+
+.tip-address {
+  margin: 0 0 0.9rem;
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  line-height: 1.45;
+  word-break: break-all;
+  text-align: center;
+  color: var(--ink);
+}
+
+.tip-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.tip-actions > .primary,
+.tip-actions > .secondary {
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.tip-status {
+  margin-top: 0.75rem;
+  margin-bottom: 0;
+  font-size: 0.75rem;
+}
+
+.tip-empty {
+  margin-bottom: 0.25rem;
 }
 
 .ask-ai-dialog {
@@ -2032,7 +2290,8 @@ a.open-in-link:focus-visible,
     border-radius: 16px 16px 0 0;
   }
 
-  .settings-dialog {
+  .settings-dialog,
+  .tip-dialog {
     inset: auto 0 0 0;
     width: 100%;
     height: min(85dvh, 42rem);
@@ -2060,6 +2319,18 @@ a.open-in-link:focus-visible,
   }
 
   @keyframes settings-drawer-out {
+    to {
+      transform: translate3d(0, 100%, 0);
+    }
+  }
+
+  @keyframes tip-drawer-in {
+    from {
+      transform: translate3d(0, 100%, 0);
+    }
+  }
+
+  @keyframes tip-drawer-out {
     to {
       transform: translate3d(0, 100%, 0);
     }

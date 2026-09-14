@@ -28,6 +28,12 @@ import {
   type AskAiPanelHandle,
 } from "./AskAiPanel";
 import {
+  TipButton,
+  TipDialog,
+  hasProfilePaymentTargets,
+  type TipDialogHandle,
+} from "./TipDialog";
+import {
   fetchTrendingFeed,
   formatCreateAtDate,
   getKind0Profiles,
@@ -359,8 +365,10 @@ export default function App() {
     authorLabel: string;
   } | null>(null);
   const [askNote, setAskNote] = useState<LocatedEvent | null>(null);
+  const [tipNote, setTipNote] = useState<LocatedEvent | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const askAiRef = useRef<AskAiPanelHandle>(null);
+  const tipRef = useRef<TipDialogHandle>(null);
   const sentinelRef = useRef<HTMLDivElement>(null);
   const fayanRevealRef = useRef<FayanRevealController | null>(null);
   const fayanInFlightRef = useRef<FayanInFlight | null>(null);
@@ -490,6 +498,9 @@ export default function App() {
     if (askNote?.pubkey.toLowerCase() === pubkey.toLowerCase()) {
       askAiRef.current?.close();
       setAskNote(null);
+    }
+    if (tipNote?.pubkey.toLowerCase() === pubkey.toLowerCase()) {
+      tipRef.current?.close();
     }
   };
 
@@ -780,10 +791,17 @@ export default function App() {
                 }
               };
               const asking = askNote?.id === note.id;
+              const tipping = tipNote?.id === note.id;
               return (
                 <li
                   key={note.id}
-                  className={asking ? "note note-asking" : "note"}
+                  className={[
+                    "note",
+                    asking ? "note-asking" : "",
+                    tipping ? "note-tipping" : "",
+                  ]
+                    .filter(Boolean)
+                    .join(" ")}
                 >
                   <button
                     type="button"
@@ -827,16 +845,32 @@ export default function App() {
                         onOpen={openNote}
                       />
                     ) : null}
-                    <AskAiButton
-                      pressed={asking}
-                      onClick={() => {
-                        if (askNote?.id === note.id) {
-                          askAiRef.current?.close();
-                          return;
-                        }
-                        setAskNote(note);
-                      }}
-                    />
+                    <div className="note-footer-actions">
+                      {hasProfilePaymentTargets(authorProfile) ? (
+                        <TipButton
+                          pressed={tipping}
+                          onClick={() => {
+                            if (tipNote?.id === note.id) {
+                              tipRef.current?.close();
+                              return;
+                            }
+                            askAiRef.current?.close();
+                            setTipNote(note);
+                          }}
+                        />
+                      ) : null}
+                      <AskAiButton
+                        pressed={asking}
+                        onClick={() => {
+                          if (askNote?.id === note.id) {
+                            askAiRef.current?.close();
+                            return;
+                          }
+                          tipRef.current?.close();
+                          setAskNote(note);
+                        }}
+                      />
+                    </div>
                   </div>
                 </li>
               );
@@ -887,6 +921,19 @@ export default function App() {
           profile={profiles[askNote.pubkey.toLowerCase()]}
           engagement={engagementById[askNote.id.toLowerCase()]}
           onClose={() => setAskNote(null)}
+        />
+      ) : null}
+
+      {tipNote ? (
+        <TipDialog
+          ref={tipRef}
+          pubkey={tipNote.pubkey}
+          profile={profiles[tipNote.pubkey.toLowerCase()]}
+          authorLabel={profileLabel(
+            tipNote.pubkey,
+            profiles[tipNote.pubkey.toLowerCase()]?.displayName
+          )}
+          onClose={() => setTipNote(null)}
         />
       ) : null}
     </main>
