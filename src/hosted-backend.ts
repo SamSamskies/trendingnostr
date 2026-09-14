@@ -170,18 +170,25 @@ export function createHostedBackend(): InferenceBackend {
             typeof (data as { http?: unknown }).http === "number"
               ? (data as { http: number }).http
               : null;
-          // Gemini high-demand 503s (and older 502 wrappers).
+          // Gemini high-demand / INTERNAL 5xx (ours may be 503 or wrapped 502).
           if (
             res.status === 503 ||
+            res.status === 502 ||
             providerStatus === "UNAVAILABLE" ||
-            providerHttp === 503
+            providerStatus === "INTERNAL" ||
+            providerHttp === 503 ||
+            providerHttp === 500 ||
+            providerHttp === 502
           ) {
+            throw makeInferenceError("unavailable", "provider_busy");
+          }
+          if (errorCode === "provider_error" && res.status >= 500) {
             throw makeInferenceError("unavailable", "provider_busy");
           }
           if (!res.ok) {
             throw makeInferenceError(
               "provider_error",
-              `Hosted inference failed: ${res.status}`
+              "Hosted inference failed. Try again in a moment."
             );
           }
 

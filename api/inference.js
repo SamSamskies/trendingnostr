@@ -365,8 +365,15 @@ function looksLikeCapacityError(errJson, httpStatus) {
   if (httpStatus !== 500 && httpStatus !== 503 && httpStatus !== 502) {
     return false;
   }
+  const providerStatus =
+    errJson && typeof errJson === "object" ? errJson?.error?.status : null;
+  // Gemini often returns opaque 500 INTERNAL / "Internal error encountered"
+  // under load; treat like capacity rather than a hard provider failure.
+  if (providerStatus === "INTERNAL" || providerStatus === "UNAVAILABLE") {
+    return true;
+  }
   const text = collectStrings(errJson).join(" ");
-  return /high demand|try again later|temporarily|UNAVAILABLE|overloaded|capacity/i.test(
+  return /high demand|try again later|temporarily|UNAVAILABLE|overloaded|capacity|internal error/i.test(
     text
   );
 }
@@ -531,16 +538,23 @@ export default async function handler(req, res) {
     return;
   }
 
-  // One capacity retry for transient Gemini 503s (common on multimodal).
-  if (geminiRes.status === 503) {
+  // One capacity retry for transient Gemini 5xx (503 high demand, 500 INTERNAL).
+  if (
+    geminiRes.status === 500 ||
+    geminiRes.status === 502 ||
+    geminiRes.status === 503
+  ) {
     let errJson = null;
     try {
       errJson = await geminiRes.json();
     } catch {
       errJson = null;
     }
-    if (looksLikeCapacityError(errJson, 503)) {
-      console.warn("[api/inference] provider 503 capacity; retrying once", {
+    const capacity = looksLikeCapacityError(errJson, geminiRes.status);
+    if (capacity) {
+      console.warn("[api/inference] provider capacity; retrying once", {
+        http: geminiRes.status,
+        status: errJson?.error?.status,
         message: geminiErrorMessage(errJson)?.slice(0, 200),
       });
       try {
@@ -551,14 +565,20 @@ export default async function handler(req, res) {
         res.status(503).json({ error: "provider_busy" });
         return;
       }
+      // Fall through to normal status handling with the retry response.
     } else {
       releaseClient(clientId);
+      const providerStatus = errJson?.error?.status;
       console.warn("[api/inference] provider error", {
-        http: 503,
-        status: errJson?.error?.status,
+        http: geminiRes.status,
+        status: providerStatus,
         message: geminiErrorMessage(errJson)?.slice(0, 200),
       });
-      res.status(503).json({ error: "provider_busy" });
+      res.status(503).json({
+        error: "provider_busy",
+        http: geminiRes.status,
+        ...(providerStatus ? { providerStatus } : {}),
+      });
       return;
     }
   }
@@ -608,8 +628,15 @@ export default async function handler(req, res) {
       status: providerStatus,
       message: geminiErrorMessage(errJson)?.slice(0, 200),
     });
-    const status = geminiRes.status >= 500 ? 502 : 400;
-    res.status(status).json({
+    if (geminiRes.status >= 500) {
+      res.status(503).json({
+        error: "provider_busy",
+        http: geminiRes.status,
+        ...(providerStatus ? { providerStatus } : {}),
+      });
+      return;
+    }
+    res.status(400).json({
       error: "provider_error",
       http: geminiRes.status,
       ...(providerStatus ? { providerStatus } : {}),

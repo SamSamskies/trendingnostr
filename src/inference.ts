@@ -160,6 +160,9 @@ export function describeInferenceError(error: unknown): string {
     return message || "The inference request was rejected.";
   }
   if (code === "provider_error" || code === "provider_error") {
+    if (/Hosted inference failed/i.test(message)) {
+      return "The hosted model hit an error. Try again in a moment.";
+    }
     return message || "The inference provider failed.";
   }
   if (message) return message;
