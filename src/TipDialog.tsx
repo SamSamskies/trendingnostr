@@ -7,11 +7,18 @@ import {
   useState,
   type Ref,
 } from "react";
-import type { Kind0Profile } from "./identity";
-import { fetchPaytoTags, readCachedPaytoTags } from "./nostr";
+import { Avatar } from "./Avatar";
+import { encodeNpub, type Kind0Profile } from "./identity";
+import {
+  fetchPaytoTags,
+  readCachedKind0CachedAt,
+  readCachedPaytoCachedAt,
+  readCachedPaytoTags,
+} from "./nostr";
 import {
   hasProfilePaymentTargets,
   mergePaymentTargets,
+  paymentTargetDetails,
   paymentTargetsFromPaytoTags,
   paymentTargetsFromProfile,
   type PaymentTarget,
@@ -95,6 +102,7 @@ export function TipDialog({
   const onCloseRef = useRef(onClose);
   onCloseRef.current = onClose;
 
+  const npubFingerprint = useMemo(() => formatNpubFingerprint(pubkey), [pubkey]);
   const profileTargets = useMemo(
     () => paymentTargetsFromProfile(profile),
     [profile]
@@ -113,6 +121,7 @@ export function TipDialog({
     return paymentTargetsFromPaytoTags(tags)[0]?.id ?? null;
   });
   const [copied, setCopied] = useState(false);
+  const [freshnessTick, setFreshnessTick] = useState(0);
 
   const targets = useMemo(
     () => mergePaymentTargets(profileTargets, extra),
@@ -120,6 +129,16 @@ export function TipDialog({
   );
   const selected =
     targets.find((target) => target.id === selectedId) ?? targets[0];
+  const selectedDetails = selected ? paymentTargetDetails(selected) : null;
+  const freshnessLabel = useMemo(() => {
+    void freshnessTick;
+    if (!selected) return null;
+    const cachedAt =
+      selected.source === "profile"
+        ? readCachedKind0CachedAt(pubkey)
+        : readCachedPaytoCachedAt(pubkey);
+    return formatCacheAge(cachedAt);
+  }, [selected, pubkey, freshnessTick]);
 
   useImperativeHandle(ref, () => ({
     close: () => startCloseRef.current(),
@@ -184,12 +203,14 @@ export function TipDialog({
     setExtraStatus(cached ? "done" : "loading");
     setSelectedId(null);
     setCopied(false);
+    setFreshnessTick((n) => n + 1);
 
     let cancelled = false;
     void fetchPaytoTags(pubkey).then((tags) => {
       if (cancelled) return;
       setExtra(paymentTargetsFromPaytoTags(tags));
       setExtraStatus("done");
+      setFreshnessTick((n) => n + 1);
     });
     return () => {
       cancelled = true;
@@ -224,7 +245,17 @@ export function TipDialog({
         <header className="tip-header">
           <div className="tip-heading">
             <h2 id={titleId}>Tip</h2>
-            <p className="tip-subtitle">Send to {authorLabel}</p>
+            <div className="tip-recipient">
+              <Avatar src={profile?.picture} pubkey={pubkey} />
+              <div className="tip-recipient-copy">
+                <p className="tip-subtitle">Send to {authorLabel}</p>
+                {npubFingerprint ? (
+                  <p className="tip-npub" title={encodeNpub(pubkey)}>
+                    {npubFingerprint}
+                  </p>
+                ) : null}
+              </div>
+            </div>
           </div>
           <button
             type="button"
@@ -269,28 +300,49 @@ export function TipDialog({
             </div>
           ) : null}
 
-          {selected ? (
+          {selected && selectedDetails ? (
             <div className="tip-selected">
               {targets.length === 1 ? (
                 <p className="tip-method-label">{selected.label}</p>
               ) : null}
+              <dl className="tip-confirm">
+                <div>
+                  <dt>Source</dt>
+                  <dd>
+                    {selectedDetails.sourceLabel}
+                    {freshnessLabel ? ` · ${freshnessLabel}` : null}
+                  </dd>
+                </div>
+                {selectedDetails.network ? (
+                  <div>
+                    <dt>Network</dt>
+                    <dd>{selectedDetails.network}</dd>
+                  </div>
+                ) : null}
+                {selectedDetails.amount ? (
+                  <div>
+                    <dt>Amount</dt>
+                    <dd>{selectedDetails.amount}</dd>
+                  </div>
+                ) : null}
+              </dl>
               <QrCode
                 value={selected.uri}
                 label={`QR code for ${selected.label} address`}
               />
-              <p className="tip-address">{selected.address}</p>
+              <p className="tip-address">{selected.uri}</p>
               <div className="tip-actions">
                 <button
                   type="button"
                   className="primary"
                   onClick={() => {
-                    void navigator.clipboard.writeText(selected.address).then(
+                    void navigator.clipboard.writeText(selected.uri).then(
                       () => setCopied(true),
                       () => setCopied(false)
                     );
                   }}
                 >
-                  {copied ? "Copied" : "Copy address"}
+                  {copied ? "Copied" : "Copy"}
                 </button>
                 {selected.openable ? (
                   <a
@@ -318,6 +370,21 @@ export function TipDialog({
       </div>
     </dialog>
   );
+}
+
+function formatNpubFingerprint(pubkey: string): string {
+  const npub = encodeNpub(pubkey);
+  if (!npub || npub.length < 16) return "";
+  return `${npub.slice(0, 12)}…${npub.slice(-4)}`;
+}
+
+function formatCacheAge(cachedAt: number | null): string | null {
+  if (cachedAt == null) return null;
+  const seconds = Math.max(0, Math.floor((Date.now() - cachedAt) / 1000));
+  if (seconds < 45) return "just now";
+  if (seconds < 3600) return `${Math.max(1, Math.floor(seconds / 60))}m ago`;
+  if (seconds < 86400) return `${Math.max(1, Math.floor(seconds / 3600))}h ago`;
+  return `${Math.max(1, Math.floor(seconds / 86400))}d ago`;
 }
 
 function QrCode({ value, label }: { value: string; label: string }) {

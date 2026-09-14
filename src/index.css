@@ -1755,10 +1755,39 @@ a.open-in-link:focus-visible,
   letter-spacing: -0.03em;
 }
 
+.tip-recipient {
+  display: flex;
+  align-items: center;
+  gap: 0.7rem;
+  min-width: 0;
+  margin: 0.65rem 0 0;
+}
+
+.tip-recipient .avatar {
+  width: 2.35rem;
+  height: 2.35rem;
+}
+
+.tip-recipient-copy {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.12rem;
+}
+
 .tip-subtitle {
-  margin: 0.25rem 0 0;
+  margin: 0;
   color: var(--muted);
   font-size: 0.88rem;
+}
+
+.tip-npub {
+  margin: 0;
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  line-height: 1.35;
+  color: var(--muted);
+  word-break: break-all;
 }
 
 .tip-close {
@@ -1808,6 +1837,40 @@ a.open-in-link:focus-visible,
   font-family: var(--font-display);
   font-weight: 600;
   font-size: 0.92rem;
+}
+
+.tip-confirm {
+  display: grid;
+  gap: 0.35rem;
+  margin: 0 0 0.9rem;
+  padding: 0.65rem 0.75rem;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--bg);
+}
+
+.tip-confirm > div {
+  display: grid;
+  grid-template-columns: 4.5rem minmax(0, 1fr);
+  gap: 0.5rem;
+  align-items: baseline;
+}
+
+.tip-confirm dt {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.72rem;
+  font-weight: 500;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+}
+
+.tip-confirm dd {
+  margin: 0;
+  color: var(--ink);
+  font-size: 0.8rem;
+  line-height: 1.35;
+  word-break: break-word;
 }
 
 .tip-methods {

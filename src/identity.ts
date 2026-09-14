@@ -10,7 +10,8 @@ export type Kind0Profile = {
   sp?: string;
 };
 
-function isPrivateOrLocalHostname(hostname: string): boolean {
+/** True for loopback, link-local, RFC1918, and .local hostnames. */
+export function isPrivateOrLocalHostname(hostname: string): boolean {
   const host = hostname.toLowerCase().replace(/^\[|\]$/g, "");
   if (!host || host === "localhost" || host.endsWith(".localhost")) return true;
   if (host === "local" || host.endsWith(".local")) return true;
