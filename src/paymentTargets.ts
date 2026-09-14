@@ -154,21 +154,34 @@ function canonicalType(raw: string): string | null {
 }
 
 function normalizeAddress(type: string, raw: string): string | null {
-  const trimmed = raw.trim();
+  const decoded = decodeAuthority(raw.trim());
   if (
-    !trimmed ||
-    trimmed.length > MAX_ADDRESS_LEN ||
-    /[\s<>"']/.test(trimmed)
+    !decoded ||
+    decoded.length > MAX_ADDRESS_LEN ||
+    /[\s<>"']/.test(decoded)
   ) {
     return null;
   }
 
-  if (type === "lightning") return normalizeLightning(trimmed);
+  if (type === "lightning") return normalizeLightning(decoded);
   if (type === "bip352") {
-    const sp = trimmed.toLowerCase();
+    const sp = decoded.toLowerCase();
     return SP_RE.test(sp) ? sp : null;
   }
-  return trimmed;
+  return decoded;
+}
+
+/**
+ * NIP-A3 authorities may already be percent-encoded. Decode once so URI
+ * assembly encodes a single canonical form (avoids %40 → %2540).
+ */
+function decodeAuthority(value: string): string | null {
+  if (!value) return null;
+  try {
+    return decodeURIComponent(value);
+  } catch {
+    return null;
+  }
 }
 
 function normalizeLightning(value: string): string | null {

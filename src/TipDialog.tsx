@@ -278,19 +278,19 @@ export function TipDialog({
                 value={selected.uri}
                 label={`QR code for ${selected.label} address`}
               />
-              <p className="tip-address">{selected.address}</p>
+              <p className="tip-address">{selected.uri}</p>
               <div className="tip-actions">
                 <button
                   type="button"
                   className="primary"
                   onClick={() => {
-                    void navigator.clipboard.writeText(selected.address).then(
+                    void navigator.clipboard.writeText(selected.uri).then(
                       () => setCopied(true),
                       () => setCopied(false)
                     );
                   }}
                 >
-                  {copied ? "Copied" : "Copy address"}
+                  {copied ? "Copied" : "Copy"}
                 </button>
                 {selected.openable ? (
                   <a
