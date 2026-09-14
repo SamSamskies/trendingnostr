@@ -2,6 +2,8 @@ import type { Kind0Profile } from "./identity";
 
 export const PAYTO_KIND = 10133;
 
+export type PaymentTargetSource = "profile" | "payto";
+
 export type PaymentTarget = {
   id: string;
   type: string;
@@ -9,6 +11,13 @@ export type PaymentTarget = {
   address: string;
   uri: string;
   openable: boolean;
+  source: PaymentTargetSource;
+};
+
+export type PaymentTargetDetails = {
+  sourceLabel: string;
+  network: string | null;
+  amount: string | null;
 };
 
 const BECH32_CHAR = "qpzry9x8gf2tvdw0s3jn54khce6mua7l";
@@ -87,11 +96,11 @@ export function paymentTargetsFromProfile(
   if (!profile) return [];
   const targets: PaymentTarget[] = [];
   if (profile.lud16) {
-    const target = makeTarget("lightning", profile.lud16);
+    const target = makeTarget("lightning", profile.lud16, "profile");
     if (target) targets.push(target);
   }
   if (profile.sp) {
-    const target = makeTarget("bip352", profile.sp);
+    const target = makeTarget("bip352", profile.sp, "profile");
     if (target) targets.push(target);
   }
   return targets;
@@ -101,7 +110,7 @@ export function paymentTargetsFromPaytoTags(tags: string[][]): PaymentTarget[] {
   const targets: PaymentTarget[] = [];
   for (const tag of tags) {
     if (tag[0] !== "payto" || tag.length < 3) continue;
-    const target = makeTarget(tag[1], tag[2]);
+    const target = makeTarget(tag[1], tag[2], "payto");
     if (target) targets.push(target);
   }
   return targets;
@@ -128,7 +137,11 @@ function typeRank(type: string): number {
   return index < 0 ? TYPE_ORDER.length : index;
 }
 
-function makeTarget(rawType: string, rawAddress: string): PaymentTarget | null {
+function makeTarget(
+  rawType: string,
+  rawAddress: string,
+  source: PaymentTargetSource
+): PaymentTarget | null {
   const type = canonicalType(rawType);
   if (!type) return null;
   const address = normalizeAddress(type, rawAddress);
@@ -140,6 +153,7 @@ function makeTarget(rawType: string, rawAddress: string): PaymentTarget | null {
     label: TYPE_LABELS[type] ?? titleType(type),
     address,
     uri,
+    source,
     // Raw addresses (silent payments) and payto:// are copy/QR only.
     openable: /^(https?|lightning|bitcoin|bitcoincash|ethereum|litecoin|monero|nano|solana|tron|zcash):/i.test(
       uri
@@ -223,4 +237,110 @@ function paymentUri(type: string, address: string): string {
 
 function titleType(type: string): string {
   return type.charAt(0).toUpperCase() + type.slice(1);
+}
+
+/** Human-readable source / network / amount for the tip confirmation strip. */
+export function paymentTargetDetails(
+  target: PaymentTarget
+): PaymentTargetDetails {
+  const sourceLabel =
+    target.source === "profile" ? "Profile (kind 0)" : "Payto (kind 10133)";
+  const parsed = describePaymentPayload(target);
+  return {
+    sourceLabel,
+    network: parsed.network,
+    amount: parsed.amount,
+  };
+}
+
+function describePaymentPayload(target: PaymentTarget): {
+  network: string | null;
+  amount: string | null;
+} {
+  if (target.type === "lightning") {
+    if (target.address.startsWith("lnurl1")) {
+      return { network: "Lightning", amount: "Set by wallet" };
+    }
+    const invoice = describeBolt11(target.address);
+    if (invoice) return invoice;
+    return { network: "Lightning", amount: "Any amount" };
+  }
+  if (target.type === "bip352") {
+    return {
+      network: target.address.startsWith("tsp1")
+        ? "Bitcoin testnet"
+        : "Bitcoin",
+      amount: "Any amount",
+    };
+  }
+  if (target.type === "bip353") {
+    return { network: "Bitcoin DNS", amount: "Resolved by wallet" };
+  }
+  if (target.type === "bitcoin") {
+    return { network: "Bitcoin", amount: "Any amount" };
+  }
+  if (SCHEME_TYPES.has(target.type) || TYPE_LABELS[target.type]) {
+    return {
+      network: TYPE_LABELS[target.type] ?? titleType(target.type),
+      amount: "Any amount",
+    };
+  }
+  return { network: titleType(target.type), amount: null };
+}
+
+/**
+ * Minimal BOLT11 humanizer for tip confirmation (mainnet / testnet / signet).
+ * Amount parsing mirrors the zap-receipt helper in nostr.ts.
+ */
+function describeBolt11(invoice: string): {
+  network: string;
+  amount: string;
+} | null {
+  const lower = invoice.toLowerCase();
+  let network: string | null = null;
+  let prefixLen = 0;
+  if (lower.startsWith("lnbcrt")) {
+    network = "Bitcoin regtest";
+    prefixLen = 6;
+  } else if (lower.startsWith("lntbs")) {
+    network = "Bitcoin signet";
+    prefixLen = 5;
+  } else if (lower.startsWith("lntb")) {
+    network = "Bitcoin testnet";
+    prefixLen = 4;
+  } else if (lower.startsWith("lnbc")) {
+    network = "Bitcoin";
+    prefixLen = 4;
+  } else {
+    return null;
+  }
+
+  if (lower.length < 50) {
+    return { network, amount: "Invoice" };
+  }
+  const head = lower.slice(0, 50);
+  const sep = head.lastIndexOf("1");
+  if (sep < prefixLen) return { network, amount: "Invoice" };
+  const amount = head.slice(prefixLen, sep);
+  if (!amount) return { network, amount: "Any amount" };
+
+  const multipliers: Record<string, number> = {
+    m: 1e5,
+    u: 1e2,
+    n: 0.1,
+    p: 0.0001,
+  };
+  const last = amount[amount.length - 1]!;
+  let sats: number;
+  if (last in multipliers) {
+    const n = Number(amount.slice(0, -1));
+    if (!Number.isFinite(n) || n < 0) return { network, amount: "Invoice" };
+    sats = Math.floor(n * multipliers[last]!);
+  } else {
+    const n = Number(amount);
+    if (!Number.isFinite(n) || n < 0) return { network, amount: "Invoice" };
+    sats = Math.floor(n * 1e8);
+  }
+  if (sats <= 0) return { network, amount: "Any amount" };
+  return { network, amount: `${sats.toLocaleString()} sats (fixed)` };
 }

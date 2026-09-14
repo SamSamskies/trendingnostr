@@ -1067,6 +1067,13 @@ export function readCachedKind0Profiles(
   return found;
 }
 
+/** Cache timestamp for tip confirmation freshness; null if missing. */
+export function readCachedKind0CachedAt(pubkey: string): number | null {
+  const author = pubkey.trim().toLowerCase();
+  if (!/^[0-9a-f]{64}$/.test(author)) return null;
+  return getProfileMemoryCache().get(author)?.cachedAt ?? null;
+}
+
 /**
  * Load kind 0 profiles from Vertex and Primal/Ditto in parallel; keep newest
  * per pubkey. Vertex is queried separately so its curated set stays distinct
@@ -1178,6 +1185,16 @@ export function readCachedPaytoTags(pubkey: string): string[][] | null {
   if (!entry) return null;
   if (Date.now() - entry.cachedAt > PAYTO_CACHE_TTL_MS) return null;
   return entry.tags;
+}
+
+/** Cache timestamp for tip confirmation freshness; null if missing/stale. */
+export function readCachedPaytoCachedAt(pubkey: string): number | null {
+  const author = pubkey.trim().toLowerCase();
+  if (!/^[0-9a-f]{64}$/.test(author)) return null;
+  const entry = paytoMemoryCache.get(author);
+  if (!entry) return null;
+  if (Date.now() - entry.cachedAt > PAYTO_CACHE_TTL_MS) return null;
+  return entry.cachedAt;
 }
 
 function rememberPaytoTags(author: string, tags: string[][]): void {
