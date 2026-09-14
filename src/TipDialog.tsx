@@ -37,12 +37,13 @@ export function TipButton({
     <button
       type="button"
       className="tip-btn"
+      title="Tip"
       aria-pressed={pressed}
       aria-haspopup="dialog"
       onClick={onClick}
     >
       <TipBoltIcon />
-      Tip
+      <span className="note-action-label">Tip</span>
     </button>
   );
 }

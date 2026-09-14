@@ -264,12 +264,13 @@ export function AskAiButton({
     <button
       type="button"
       className="ask-ai-btn"
+      title="Ask AI"
       aria-pressed={pressed}
       aria-haspopup="dialog"
       onClick={onClick}
     >
       <SparkleIcon />
-      Ask AI
+      <span className="note-action-label">Ask AI</span>
     </button>
   );
 }

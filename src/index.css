@@ -1627,6 +1627,38 @@ a.open-in-link:focus-visible,
   height: 1.05rem;
 }
 
+@media (max-width: 520px) {
+  .ask-ai-btn,
+  .tip-btn {
+    justify-content: center;
+    width: 2.15rem;
+    height: 2.15rem;
+    padding: 0;
+    gap: 0;
+  }
+
+  .note-action-label {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border: 0;
+  }
+
+  .note-footer-actions {
+    gap: 0.3rem;
+  }
+
+  .note-footer .note-stats {
+    flex: 1 1 auto;
+    gap: 0.65rem 0.85rem;
+  }
+}
+
 .tip-dialog {
   width: min(26.5rem, 100vw);
   height: 100%;
