@@ -27,12 +27,18 @@ function prefersReducedMotion(): boolean {
 }
 
 export function TipButton({
+  pubkey,
   pressed,
   onClick,
 }: {
+  pubkey: string;
   pressed: boolean;
   onClick: () => void;
 }) {
+  const prefetch = () => {
+    void fetchPaytoTags(pubkey);
+  };
+
   return (
     <button
       type="button"
@@ -40,6 +46,8 @@ export function TipButton({
       title="Tip"
       aria-pressed={pressed}
       aria-haspopup="dialog"
+      onPointerEnter={prefetch}
+      onFocus={prefetch}
       onClick={onClick}
     >
       <TipBoltIcon />

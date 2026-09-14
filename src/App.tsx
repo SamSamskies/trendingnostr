@@ -848,6 +848,7 @@ export default function App() {
                     <div className="note-footer-actions">
                       {hasProfilePaymentTargets(authorProfile) ? (
                         <TipButton
+                          pubkey={note.pubkey}
                           pressed={tipping}
                           onClick={() => {
                             if (tipNote?.id === note.id) {
