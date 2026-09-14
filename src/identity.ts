@@ -6,6 +6,8 @@ export type Kind0Profile = {
   nip05?: string;
   /** NIP-57 lightning address (`name@domain`), lowercased when present. */
   lud16?: string;
+  /** BIP-352 silent payment address (`sp1…` / `tsp1…`). */
+  sp?: string;
 };
 
 function isPrivateOrLocalHostname(hostname: string): boolean {
@@ -65,12 +67,15 @@ function parseProfileContent(content: string): Kind0Profile {
     const nip05 = typeof data.nip05 === "string" ? data.nip05.trim() : "";
     const lud16Raw = typeof data.lud16 === "string" ? data.lud16.trim() : "";
     const lud16 = normalizeLud16(lud16Raw) ?? "";
+    const spRaw = typeof data.sp === "string" ? data.sp.trim() : "";
+    const sp = normalizeSilentPayment(spRaw) ?? "";
 
     return {
       picture: isSafeHttpUrl(picture) ? picture : undefined,
       displayName: displayName || undefined,
       nip05: nip05 || undefined,
       lud16: lud16 || undefined,
+      sp: sp || undefined,
     };
   } catch {
     return {};
@@ -129,6 +134,16 @@ export function isBlockedNip05(nip05: string | undefined): boolean {
 /** Normalize for blocked-display-name matching. */
 function normalizeDisplayName(name: string): string {
   return name.trim().replace(/\s+/g, " ").toLowerCase();
+}
+
+const SILENT_PAYMENT_RE =
+  /^(sp|tsp)1[qpzry9x8gf2tvdw0s3jn54khce6mua7l]{40,130}$/;
+
+/** Normalize BIP-352 silent payment address; null if missing/malformed. */
+function normalizeSilentPayment(sp: string | undefined): string | null {
+  if (!sp) return null;
+  const trimmed = sp.trim().toLowerCase();
+  return SILENT_PAYMENT_RE.test(trimmed) ? trimmed : null;
 }
 
 /** Normalize lud16 for matching; null if missing/malformed. */
