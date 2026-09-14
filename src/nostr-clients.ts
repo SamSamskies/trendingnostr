@@ -76,10 +76,10 @@ export const NOSTR_CLIENTS: NostrClient[] = [
     profileUrl: "https://nostrich.org/p/{code}",
   },
   {
-    id: "coracle",
-    name: "Coracle",
+    id: "ditto",
+    name: "Ditto",
     platform: "web",
-    url: "https://coracle.social/{code}",
+    url: "https://ditto.pub/{code}",
   },
   {
     id: "fevela",
