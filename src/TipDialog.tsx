@@ -178,6 +178,13 @@ export function TipDialog({
   }, []);
 
   useEffect(() => {
+    const cached = readCachedPaytoTags(pubkey);
+    const cachedExtra = cached ? paymentTargetsFromPaytoTags(cached) : [];
+    setExtra(cachedExtra);
+    setExtraStatus(cached ? "done" : "loading");
+    setSelectedId(null);
+    setCopied(false);
+
     let cancelled = false;
     void fetchPaytoTags(pubkey).then((tags) => {
       if (cancelled) return;
