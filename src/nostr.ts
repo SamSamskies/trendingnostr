@@ -1140,14 +1140,16 @@ export async function getKind0Profiles(
 }
 
 /**
- * Latest kind 10133 (NIP-A3 payto) tags for an author. Queried when the tip
- * sheet opens — not for the whole feed. Includes Damus because many clients
- * publish payto there and Primal/Ditto often do not mirror kind 10133.
+ * Kind 10133 (NIP-A3 payto) for Tip. Prefer the author's NIP-65 write relays
+ * (outbox), then fall back to a small fixed set — many payto events never
+ * reach Primal/Ditto.
  */
-const PAYTO_RELAYS = [
+const RELAY_LIST_KIND = 10002;
+const PAYTO_FALLBACK_RELAYS = [
   ...FALLBACK_PROFILE_RELAYS,
   "wss://relay.damus.io",
 ] as const;
+const PAYTO_RELAY_CAP = 8;
 
 /** Keep tip reopen snappy; payto rarely changes mid-session. */
 const PAYTO_CACHE_TTL_MS = 60 * 60 * 1000;
@@ -1158,8 +1160,15 @@ type PaytoCacheEntry = {
   cachedAt: number;
 };
 
+type RelayListCacheEntry = {
+  writeRelays: string[];
+  cachedAt: number;
+};
+
 const paytoMemoryCache = new Map<string, PaytoCacheEntry>();
 const paytoInflight = new Map<string, Promise<string[][]>>();
+const relayListMemoryCache = new Map<string, RelayListCacheEntry>();
+const relayListInflight = new Map<string, Promise<string[]>>();
 
 /** Sync cache hit for Tip drawer initial state; null if missing/stale. */
 export function readCachedPaytoTags(pubkey: string): string[][] | null {
@@ -1173,42 +1182,172 @@ export function readCachedPaytoTags(pubkey: string): string[][] | null {
 
 function rememberPaytoTags(author: string, tags: string[][]): void {
   paytoMemoryCache.set(author, { tags, cachedAt: Date.now() });
-  if (paytoMemoryCache.size <= PAYTO_CACHE_MAX_ENTRIES) return;
-  const oldest = [...paytoMemoryCache.entries()].sort(
+  trimCache(paytoMemoryCache, PAYTO_CACHE_MAX_ENTRIES);
+}
+
+function rememberRelayList(author: string, writeRelays: string[]): void {
+  relayListMemoryCache.set(author, { writeRelays, cachedAt: Date.now() });
+  trimCache(relayListMemoryCache, PAYTO_CACHE_MAX_ENTRIES);
+}
+
+function trimCache<T extends { cachedAt: number }>(
+  cache: Map<string, T>,
+  maxEntries: number
+): void {
+  if (cache.size <= maxEntries) return;
+  const oldest = [...cache.entries()].sort(
     (a, b) => a[1].cachedAt - b[1].cachedAt
   );
-  for (const [key] of oldest.slice(
-    0,
-    paytoMemoryCache.size - PAYTO_CACHE_MAX_ENTRIES
-  )) {
-    paytoMemoryCache.delete(key);
+  for (const [key] of oldest.slice(0, cache.size - maxEntries)) {
+    cache.delete(key);
   }
+}
+
+function normalizeRelayUrl(raw: string): string | null {
+  try {
+    const url = new URL(raw.trim());
+    if (url.protocol !== "wss:" && url.protocol !== "ws:") return null;
+    if (url.username || url.password) return null;
+    const host = url.hostname.toLowerCase();
+    if (!host || host === "relay.nostr.band") return null;
+    url.hash = "";
+    url.search = "";
+    let href = url.href;
+    if (href.endsWith("/")) href = href.slice(0, -1);
+    return href;
+  } catch {
+    return null;
+  }
+}
+
+/** NIP-65 outbox: write-marked and unmarked `r` tags. */
+function writeRelaysFromTags(tags: string[][]): string[] {
+  const out: string[] = [];
+  const seen = new Set<string>();
+  for (const tag of tags) {
+    if (tag[0] !== "r" || typeof tag[1] !== "string") continue;
+    const marker = typeof tag[2] === "string" ? tag[2].trim().toLowerCase() : "";
+    if (marker === "read") continue;
+    const url = normalizeRelayUrl(tag[1]);
+    if (!url || seen.has(url)) continue;
+    seen.add(url);
+    out.push(url);
+  }
+  return out;
+}
+
+function mergePaytoRelays(writeRelays: string[]): string[] {
+  const out: string[] = [];
+  const seen = new Set<string>();
+  for (const relay of [...writeRelays, ...PAYTO_FALLBACK_RELAYS]) {
+    const url = normalizeRelayUrl(relay);
+    if (!url || seen.has(url)) continue;
+    seen.add(url);
+    out.push(url);
+    if (out.length >= PAYTO_RELAY_CAP) break;
+  }
+  return out;
+}
+
+async function fetchAuthorWriteRelays(
+  pool: SimplePool,
+  author: string
+): Promise<string[]> {
+  const cached = relayListMemoryCache.get(author);
+  if (cached && Date.now() - cached.cachedAt <= PAYTO_CACHE_TTL_MS) {
+    return cached.writeRelays;
+  }
+
+  const pending = relayListInflight.get(author);
+  if (pending) return pending;
+
+  const request = (async () => {
+    try {
+      const settled = await Promise.allSettled(
+        PAYTO_FALLBACK_RELAYS.map((relay) =>
+          pool.querySync(
+            [relay],
+            { kinds: [RELAY_LIST_KIND], authors: [author], limit: 1 },
+            { maxWait: RELAY_MAX_WAIT_MS }
+          )
+        )
+      );
+
+      let newest: Event | null = null;
+      for (const result of settled) {
+        if (result.status !== "fulfilled") continue;
+        for (const event of result.value) {
+          if (event.kind !== RELAY_LIST_KIND) continue;
+          if (event.pubkey.toLowerCase() !== author) continue;
+          if (!newest || event.created_at > newest.created_at) newest = event;
+        }
+      }
+      const writeRelays = newest ? writeRelaysFromTags(newest.tags) : [];
+      rememberRelayList(author, writeRelays);
+      return writeRelays;
+    } catch {
+      rememberRelayList(author, []);
+      return [];
+    }
+  })();
+
+  relayListInflight.set(author, request);
+  try {
+    return await request;
+  } finally {
+    relayListInflight.delete(author);
+  }
+}
+
+async function queryPaytoOnRelays(
+  pool: SimplePool,
+  author: string,
+  relays: string[]
+): Promise<Event | null> {
+  if (relays.length === 0) return null;
+  const settled = await Promise.allSettled(
+    relays.map((relay) =>
+      pool.querySync(
+        [relay],
+        { kinds: [PAYTO_KIND], authors: [author], limit: 1 },
+        { maxWait: RELAY_MAX_WAIT_MS }
+      )
+    )
+  );
+
+  let newest: Event | null = null;
+  for (const result of settled) {
+    if (result.status !== "fulfilled") continue;
+    for (const event of result.value) {
+      if (event.kind !== PAYTO_KIND) continue;
+      if (event.pubkey.toLowerCase() !== author) continue;
+      if (!newest || event.created_at > newest.created_at) newest = event;
+    }
+  }
+  return newest;
 }
 
 async function queryPaytoTags(author: string): Promise<string[][]> {
   const pool = new SimplePool();
   pool.maxWaitForConnection = RELAY_MAX_WAIT_MS;
   try {
-    const settled = await Promise.allSettled(
-      PAYTO_RELAYS.map((relay) =>
-        pool.querySync(
-          [relay],
-          { kinds: [PAYTO_KIND], authors: [author], limit: 1 },
-          { maxWait: RELAY_MAX_WAIT_MS }
-        )
-      )
+    const fallbackRelays = mergePaytoRelays([]);
+    const fallbackNewest = await queryPaytoOnRelays(
+      pool,
+      author,
+      fallbackRelays
     );
+    // Prefer the fast path: most tippable authors already appear on the
+    // default set. Only pay the NIP-65 + outbox round trip on a miss.
+    if (fallbackNewest) return fallbackNewest.tags;
 
-    let newest: Event | null = null;
-    for (const result of settled) {
-      if (result.status !== "fulfilled") continue;
-      for (const event of result.value) {
-        if (event.kind !== PAYTO_KIND) continue;
-        if (event.pubkey.toLowerCase() !== author) continue;
-        if (!newest || event.created_at > newest.created_at) newest = event;
-      }
-    }
-    return newest?.tags ?? [];
+    const writeRelays = await fetchAuthorWriteRelays(pool, author);
+    const fallbackSet = new Set(fallbackRelays);
+    const outboxOnly = mergePaytoRelays(writeRelays).filter(
+      (relay) => !fallbackSet.has(relay)
+    );
+    const outboxNewest = await queryPaytoOnRelays(pool, author, outboxOnly);
+    return outboxNewest?.tags ?? [];
   } catch {
     return [];
   } finally {
