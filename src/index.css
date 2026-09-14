@@ -1841,7 +1841,7 @@ a.open-in-link:focus-visible,
   justify-content: center;
   width: fit-content;
   margin: 0 auto 0.85rem;
-  padding: 0.7rem;
+  padding: 0.35rem;
   border: 1px solid var(--line);
   border-radius: 12px;
   background: #fff;
@@ -1849,8 +1849,9 @@ a.open-in-link:focus-visible,
 
 .tip-qr {
   display: block;
-  width: 11.5rem;
-  height: 11.5rem;
+  width: min(16rem, 72vw);
+  height: auto;
+  aspect-ratio: 1;
 }
 
 .tip-address {
