@@ -177,12 +177,6 @@ function formatEngagement(stats?: NoteEngagement): string {
   ].join(", ");
 }
 
-function noteContextInstruction(canSearch: boolean): string {
-  return canSearch
-    ? "Explain this note and check whether its claims hold up. Search the web if that would help. Do not summarize the note."
-    : "Explain this note and check whether its claims hold up from the note and what you already know. Do not claim you searched the web. Do not summarize the note.";
-}
-
 function buildNoteContext(
   note: LocatedEvent,
   authorName: string,
@@ -209,10 +203,9 @@ function buildNoteContext(
 function noteContextUserContent(
   note: LocatedEvent,
   authorName: string,
-  stats: NoteEngagement | undefined,
-  canSearch: boolean
+  stats?: NoteEngagement
 ): string | ContentPart[] {
-  const text = `${buildNoteContext(note, authorName, stats)}\n\n${noteContextInstruction(canSearch)}`;
+  const text = buildNoteContext(note, authorName, stats);
   const images = noteImageUrls(note.content, note.tags);
   if (images.length === 0) return text;
   // Images first, then the existing note-context text (Bridge / Gemini vision).
@@ -432,12 +425,7 @@ export function AskAiPanel({
     inflight.set(note.id, controller);
     const noteId = note.id;
     const canSearch = canSearchWeb();
-    const contextContent = noteContextUserContent(
-      note,
-      authorName,
-      engagement,
-      canSearch
-    );
+    const contextContent = noteContextUserContent(note, authorName, engagement);
     const hasImages = Array.isArray(contextContent);
 
     const current = getThread(noteId);
@@ -611,12 +599,7 @@ export function AskAiPanel({
   useEffect(() => {
     const current = getThread(note.id);
     const canSearch = canSearchWeb();
-    const nextContent = noteContextUserContent(
-      note,
-      authorName,
-      engagement,
-      canSearch
-    );
+    const nextContent = noteContextUserContent(note, authorName, engagement);
     if (!patchNoteContextHistory(current.history, nextContent, canSearch)) return;
 
     const restartingIntro =
