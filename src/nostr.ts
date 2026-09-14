@@ -106,7 +106,7 @@ export const WINDOW_PAGE_SIZE = 5;
 export const WINDOW_PREFETCH_AHEAD = 10;
 export const AUTHOR_CHUNK_SIZE = 100;
 /** Revalidate kind 0 entries after this age; stale cache is still served instantly. */
-export const PROFILE_CACHE_TTL_MS = 24 * 60 * 60 * 1000;
+export const PROFILE_CACHE_TTL_MS = 60 * 60 * 1000;
 const PROFILE_CACHE_STORAGE_KEY = "trendingnostr:kind0-profiles-v2";
 const PROFILE_CACHE_MAX_ENTRIES = 500;
 
@@ -1152,7 +1152,7 @@ const PAYTO_FALLBACK_RELAYS = [
 const PAYTO_RELAY_CAP = 8;
 
 /** Keep tip reopen snappy; payto rarely changes mid-session. */
-const PAYTO_CACHE_TTL_MS = 60 * 60 * 1000;
+const PAYTO_CACHE_TTL_MS = 15 * 60 * 1000;
 const PAYTO_CACHE_MAX_ENTRIES = 100;
 
 type PaytoCacheEntry = {
