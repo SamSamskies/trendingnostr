@@ -330,24 +330,37 @@ function mergeHydrationRelays(relayHints: readonly string[]): string[] {
  */
 export function fetchEventById(
   id: string,
-  relayHints: readonly string[] = []
+  relayHints: readonly string[] = [],
+  authorHint?: string
 ): Promise<Event | null> {
   const normalized = id.trim().toLowerCase();
   if (!isEventId(normalized)) return Promise.resolve(null);
+  const normalizedAuthor = authorHint?.trim().toLowerCase();
 
   const existing = eventByIdCache.get(normalized);
   if (existing) return existing;
 
-  const pending = queryRelayOnce(mergeHydrationRelays(relayHints), {
+  const hydrationRelays = mergeHydrationRelays(relayHints);
+  const pending = queryRelayOnce(hydrationRelays, {
     ids: [normalized],
   })
-    .then(({ events }) => {
+    .then(async ({ events }) => {
       const match =
         events.find((event) => event.id.toLowerCase() === normalized) ?? null;
-      if (!match && eventByIdCache.get(normalized) === pending) {
+      if (match) return match;
+
+      const outboxMatch =
+        normalizedAuthor && isEventId(normalizedAuthor)
+          ? await fetchEventFromAuthorOutbox(
+              normalized,
+              normalizedAuthor,
+              hydrationRelays
+            )
+          : null;
+      if (!outboxMatch && eventByIdCache.get(normalized) === pending) {
         eventByIdCache.delete(normalized);
       }
-      return match;
+      return outboxMatch;
     })
     .catch(() => {
       if (eventByIdCache.get(normalized) === pending) {
@@ -1152,10 +1165,11 @@ export async function getKind0Profiles(
  * reach Primal/Ditto.
  */
 const RELAY_LIST_KIND = 10002;
-const PAYTO_FALLBACK_RELAYS = [
+const OUTBOX_DISCOVERY_RELAYS = [
   ...FALLBACK_PROFILE_RELAYS,
   "wss://relay.damus.io",
 ] as const;
+const PAYTO_FALLBACK_RELAYS = OUTBOX_DISCOVERY_RELAYS;
 const PAYTO_RELAY_CAP = 8;
 
 /** Keep tip reopen snappy; payto rarely changes mid-session. */
@@ -1283,7 +1297,7 @@ async function fetchAuthorWriteRelays(
   const request = (async () => {
     try {
       const settled = await Promise.allSettled(
-        PAYTO_FALLBACK_RELAYS.map((relay) =>
+        OUTBOX_DISCOVERY_RELAYS.map((relay) =>
           pool.querySync(
             [relay],
             { kinds: [RELAY_LIST_KIND], authors: [author], limit: 1 },
@@ -1315,6 +1329,49 @@ async function fetchAuthorWriteRelays(
     return await request;
   } finally {
     relayListInflight.delete(author);
+  }
+}
+
+async function fetchEventFromAuthorOutbox(
+  id: string,
+  author: string,
+  alreadyQueried: readonly string[]
+): Promise<Event | null> {
+  const pool = new SimplePool();
+  pool.maxWaitForConnection = RELAY_MAX_WAIT_MS;
+  try {
+    const writeRelays = await fetchAuthorWriteRelays(pool, author);
+    const queried = new Set(
+      alreadyQueried.map((relay) => normalizeRelayUrl(relay)).filter(Boolean)
+    );
+    const outboxRelays = writeRelays
+      .filter((relay) => !queried.has(relay))
+      .slice(0, PAYTO_RELAY_CAP);
+    if (outboxRelays.length === 0) return null;
+
+    const settled = await Promise.allSettled(
+      outboxRelays.map((relay) =>
+        pool.querySync(
+          [relay],
+          { ids: [id], authors: [author] },
+          { maxWait: RELAY_MAX_WAIT_MS }
+        )
+      )
+    );
+    for (const result of settled) {
+      if (result.status !== "fulfilled") continue;
+      const match = result.value.find(
+        (event) =>
+          event.id.toLowerCase() === id &&
+          event.pubkey.toLowerCase() === author
+      );
+      if (match) return match;
+    }
+    return null;
+  } catch {
+    return null;
+  } finally {
+    pool.destroy();
   }
 }
 
