@@ -335,9 +335,14 @@ export function fetchEventById(
 ): Promise<Event | null> {
   const normalized = id.trim().toLowerCase();
   if (!isEventId(normalized)) return Promise.resolve(null);
-  const normalizedAuthor = authorHint?.trim().toLowerCase();
+  const candidateAuthor = authorHint?.trim().toLowerCase();
+  const normalizedAuthor =
+    candidateAuthor && isEventId(candidateAuthor) ? candidateAuthor : undefined;
+  const cacheKey = normalizedAuthor
+    ? `${normalized}:${normalizedAuthor}`
+    : normalized;
 
-  const existing = eventByIdCache.get(normalized);
+  const existing = eventByIdCache.get(cacheKey);
   if (existing) return existing;
 
   const hydrationRelays = mergeHydrationRelays(relayHints);
@@ -350,26 +355,26 @@ export function fetchEventById(
       if (match) return match;
 
       const outboxMatch =
-        normalizedAuthor && isEventId(normalizedAuthor)
+        normalizedAuthor
           ? await fetchEventFromAuthorOutbox(
               normalized,
               normalizedAuthor,
               hydrationRelays
             )
           : null;
-      if (!outboxMatch && eventByIdCache.get(normalized) === pending) {
-        eventByIdCache.delete(normalized);
+      if (!outboxMatch && eventByIdCache.get(cacheKey) === pending) {
+        eventByIdCache.delete(cacheKey);
       }
       return outboxMatch;
     })
     .catch(() => {
-      if (eventByIdCache.get(normalized) === pending) {
-        eventByIdCache.delete(normalized);
+      if (eventByIdCache.get(cacheKey) === pending) {
+        eventByIdCache.delete(cacheKey);
       }
       return null;
     });
 
-  eventByIdCache.set(normalized, pending);
+  eventByIdCache.set(cacheKey, pending);
   return pending;
 }
 
