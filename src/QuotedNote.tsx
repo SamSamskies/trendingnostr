@@ -305,7 +305,11 @@ export function QuotedNote({
     let cancelled = false;
     setStatus({ kind: "loading" });
 
-    void fetchEventById(noteRef.id, noteRef.relayHints).then(async (event) => {
+    void fetchEventById(
+      noteRef.id,
+      noteRef.relayHints,
+      noteRef.author
+    ).then(async (event) => {
       if (cancelled) return;
       if (!event || event.kind !== 1) {
         setStatus({ kind: "fallback" });
