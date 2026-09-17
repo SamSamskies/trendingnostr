@@ -22,7 +22,7 @@ import { KIND_HIGHLIGHT, KIND_LONG_FORM } from "./articleMeta";
 import type { OpenInKind } from "./nostr-clients";
 import { QuotedHighlight } from "./QuotedHighlight";
 import { QuotedLongForm } from "./QuotedLongForm";
-import { QuotedNote } from "./QuotedNote";
+import { isQuoteableNoteKind, QuotedNote } from "./QuotedNote";
 
 const wavlakeRegex =
   /(https?:\/\/(?:player\.|www\.)?wavlake\.com\/(?!top|new|artists|account|activity|login|preferences|feed|profile|shows)(?:(?:track|album)\/[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}|[a-z-]+))/gi;
@@ -141,11 +141,8 @@ function classifyPart(
           ? entity.code
           : noteRefLabel(entity.code);
 
-    // Embed kind-1 note/nevent refs as compact quote cards.
-    if (
-      entity.type === "note" &&
-      (entity.kind === undefined || entity.kind === 1)
-    ) {
+    // Embed kind-1 / kind-1111 note/nevent refs as compact quote cards.
+    if (entity.type === "note" && isQuoteableNoteKind(entity.kind)) {
       return {
         type: "node",
         node: (
