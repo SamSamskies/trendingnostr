@@ -8,7 +8,13 @@ import {
   type Ref,
 } from "react";
 import { Avatar } from "./Avatar";
-import { encodeNpub, type Kind0Profile } from "./identity";
+import {
+  encodeNpub,
+  isNip05,
+  readCachedNip05Verified,
+  verifyNip05,
+  type Kind0Profile,
+} from "./identity";
 import {
   fetchPaytoTags,
   readCachedKind0CachedAt,
@@ -103,6 +109,15 @@ export function TipDialog({
   onCloseRef.current = onClose;
 
   const npubFingerprint = useMemo(() => formatNpubFingerprint(pubkey), [pubkey]);
+  const nip05 = useMemo(() => {
+    const value = profile?.nip05?.trim() ?? "";
+    if (!value || !isNip05(value)) return "";
+    if (value.toLowerCase() === authorLabel.trim().toLowerCase()) return "";
+    return value;
+  }, [profile?.nip05, authorLabel]);
+  const [nip05Verified, setNip05Verified] = useState<boolean | null>(() =>
+    nip05 ? readCachedNip05Verified(pubkey, nip05) : null
+  );
   const profileTargets = useMemo(
     () => paymentTargetsFromProfile(profile),
     [profile]
@@ -218,6 +233,24 @@ export function TipDialog({
   }, [pubkey]);
 
   useEffect(() => {
+    if (!nip05) {
+      setNip05Verified(null);
+      return;
+    }
+    const cached = readCachedNip05Verified(pubkey, nip05);
+    setNip05Verified(cached);
+    if (cached !== null) return;
+
+    let cancelled = false;
+    void verifyNip05(pubkey, nip05).then((ok) => {
+      if (!cancelled) setNip05Verified(ok);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [pubkey, nip05]);
+
+  useEffect(() => {
     if (!copied) return;
     const timer = window.setTimeout(() => setCopied(false), 1600);
     return () => window.clearTimeout(timer);
@@ -249,6 +282,22 @@ export function TipDialog({
               <Avatar src={profile?.picture} pubkey={pubkey} />
               <div className="tip-recipient-copy">
                 <p className="tip-subtitle">Send to {authorLabel}</p>
+                {nip05 ? (
+                  <p className="tip-nip05">
+                    <span className="tip-nip05-text" title={nip05}>
+                      {nip05}
+                    </span>
+                    {nip05Verified ? (
+                      <span
+                        className="tip-nip05-verified"
+                        title="NIP-05 verified"
+                        aria-label="NIP-05 verified"
+                      >
+                        <Nip05VerifiedIcon />
+                      </span>
+                    ) : null}
+                  </p>
+                ) : null}
                 {npubFingerprint ? (
                   <p className="tip-npub" title={encodeNpub(pubkey)}>
                     {npubFingerprint}
@@ -376,6 +425,17 @@ function formatNpubFingerprint(pubkey: string): string {
   const npub = encodeNpub(pubkey);
   if (!npub || npub.length < 16) return "";
   return `${npub.slice(0, 12)}…${npub.slice(-4)}`;
+}
+
+function Nip05VerifiedIcon() {
+  return (
+    <svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true">
+      <path
+        fill="currentColor"
+        d="M6 0a6 6 0 1 1 0 12A6 6 0 0 1 6 0Zm2.6 4.15a.75.75 0 0 0-1.06-.05L5.2 6.3 4.4 5.5a.75.75 0 1 0-1.06 1.06l1.35 1.35c.3.3.78.28 1.05-.03l2.91-3.18a.75.75 0 0 0-.05-1.05Z"
+      />
+    </svg>
+  );
 }
 
 function formatCacheAge(cachedAt: number | null): string | null {
