@@ -82,10 +82,10 @@ export const NOSTR_CLIENTS: NostrClient[] = [
     url: "https://ditto.pub/{code}",
   },
   {
-    id: "fevela",
-    name: "Fevela",
+    id: "quotestr",
+    name: "Quotestr",
     platform: "web",
-    url: "https://fevela.me/{code}",
+    url: "https://quotestr.vercel.app/?nostrId={code}",
   },
   {
     id: "yakihonne",
