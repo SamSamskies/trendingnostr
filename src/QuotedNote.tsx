@@ -28,6 +28,13 @@ import {
   readCachedKind0Profiles,
 } from "./nostr";
 
+/** Kind 1 text notes and NIP-22 comments (1111) render as compact quote cards. */
+export const QUOTEABLE_NOTE_KINDS = new Set([1, 1111]);
+
+export function isQuoteableNoteKind(kind: number | undefined): boolean {
+  return kind === undefined || QUOTEABLE_NOTE_KINDS.has(kind);
+}
+
 type Status =
   | { kind: "loading" }
   | {
@@ -290,14 +297,14 @@ export function QuotedNote({
   onOpen?: (kind: OpenInKind, code: string) => void;
 }) {
   const [status, setStatus] = useState<Status>(() => {
-    if (noteRef.kind !== undefined && noteRef.kind !== 1) {
+    if (!isQuoteableNoteKind(noteRef.kind)) {
       return { kind: "fallback" };
     }
     return { kind: "loading" };
   });
 
   useEffect(() => {
-    if (noteRef.kind !== undefined && noteRef.kind !== 1) {
+    if (!isQuoteableNoteKind(noteRef.kind)) {
       setStatus({ kind: "fallback" });
       return;
     }
@@ -311,7 +318,7 @@ export function QuotedNote({
       noteRef.author
     ).then(async (event) => {
       if (cancelled) return;
-      if (!event || event.kind !== 1) {
+      if (!event || !QUOTEABLE_NOTE_KINDS.has(event.kind)) {
         setStatus({ kind: "fallback" });
         return;
       }
