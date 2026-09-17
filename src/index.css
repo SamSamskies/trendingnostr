@@ -1781,6 +1781,30 @@ a.open-in-link:focus-visible,
   font-size: 0.88rem;
 }
 
+.tip-nip05 {
+  margin: 0;
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+  min-width: 0;
+  font-size: 0.78rem;
+  line-height: 1.35;
+  color: var(--ink);
+}
+
+.tip-nip05-text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tip-nip05-verified {
+  flex: none;
+  display: inline-flex;
+  color: var(--accent);
+}
+
 .tip-npub {
   margin: 0;
   font-family: var(--font-mono);

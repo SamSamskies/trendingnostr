@@ -1,4 +1,5 @@
 import { nip19, type Event } from "nostr-tools";
+import { isNip05, queryProfile, type Nip05 } from "nostr-tools/nip05";
 
 export type Kind0Profile = {
   picture?: string;
@@ -192,3 +193,84 @@ export function encodeNpub(pubkey: string): string {
     return "";
   }
 }
+
+const NIP05_VERIFY_TTL_MS = 6 * 60 * 60 * 1000;
+const NIP05_VERIFY_NEGATIVE_TTL_MS = 5 * 60 * 1000;
+
+type Nip05VerifyEntry = { verified: boolean; checkedAt: number };
+
+const nip05VerifyCache = new Map<string, Nip05VerifyEntry>();
+const nip05VerifyInflight = new Map<string, Promise<boolean>>();
+
+function nip05VerifyCacheKey(pubkey: string, nip05: string): string {
+  return `${pubkey}|${nip05.trim().toLowerCase()}`;
+}
+
+function readNip05VerifyEntry(
+  pubkey: string,
+  nip05: string
+): Nip05VerifyEntry | null {
+  const author = pubkey.trim().toLowerCase();
+  if (!/^[0-9a-f]{64}$/.test(author) || !nip05.trim()) return null;
+  const entry = nip05VerifyCache.get(nip05VerifyCacheKey(author, nip05));
+  if (!entry) return null;
+  const ttl = entry.verified
+    ? NIP05_VERIFY_TTL_MS
+    : NIP05_VERIFY_NEGATIVE_TTL_MS;
+  if (Date.now() - entry.checkedAt > ttl) return null;
+  return entry;
+}
+
+/** Sync cache hit for tip-drawer NIP-05 state; null if missing/stale. */
+export function readCachedNip05Verified(
+  pubkey: string,
+  nip05: string
+): boolean | null {
+  return readNip05VerifyEntry(pubkey, nip05)?.verified ?? null;
+}
+
+/**
+ * Confirm kind 0 `nip05` maps to `pubkey` via `/.well-known/nostr.json`.
+ * Client-side only — CORS/network failures resolve to false (no checkmark).
+ */
+export async function verifyNip05(
+  pubkey: string,
+  nip05: string
+): Promise<boolean> {
+  const author = pubkey.trim().toLowerCase();
+  const address = nip05.trim();
+  if (!/^[0-9a-f]{64}$/.test(author) || !isNip05(address)) return false;
+
+  const host = nip05Hostname(address);
+  if (!host || isPrivateOrLocalHostname(host)) return false;
+
+  const cached = readNip05VerifyEntry(author, address);
+  if (cached) return cached.verified;
+
+  const key = nip05VerifyCacheKey(author, address);
+  const pending = nip05VerifyInflight.get(key);
+  if (pending) return pending;
+
+  const request = (async () => {
+    let verified = false;
+    try {
+      const pointer = await queryProfile(address as Nip05);
+      verified =
+        !!pointer?.pubkey && pointer.pubkey.toLowerCase() === author;
+    } catch {
+      verified = false;
+    }
+    nip05VerifyCache.set(key, { verified, checkedAt: Date.now() });
+    return verified;
+  })();
+
+  nip05VerifyInflight.set(key, request);
+  try {
+    return await request;
+  } finally {
+    nip05VerifyInflight.delete(key);
+  }
+}
+
+/** True when `value` is a plausible NIP-05 identifier. */
+export { isNip05 };
