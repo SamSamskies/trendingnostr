@@ -129,6 +129,9 @@ function errorCodeOf(error: unknown): string | undefined {
   return undefined;
 }
 
+const BRIDGE_HINT =
+  "Or install Inference Bridge to run Ask AI in your browser instead.";
+
 export function describeInferenceError(error: unknown): string {
   if (isAbortError(error)) return "Stopped.";
   const code = errorCodeOf(error);
@@ -140,16 +143,22 @@ export function describeInferenceError(error: unknown): string {
   }
   if (code === "unavailable") {
     if (/client_limit/i.test(message)) {
-      return "This browser has used today's hosted inference allowance.";
+      return `This browser has used today's hosted inference allowance. ${BRIDGE_HINT}`;
+    }
+    if (/search_quota/i.test(message)) {
+      return `Hosted web search is out of quota. Turn off "Web search for Ask AI" in Settings and try again. ${BRIDGE_HINT}`;
     }
     if (/provider_busy/i.test(message)) {
-      return "The hosted model is busy right now. Try again in a moment.";
+      return `The hosted model is busy right now. Try again in a moment. ${BRIDGE_HINT}`;
     }
     if (/rate_limited/i.test(message)) {
-      return "Too many hosted requests. Wait a moment and try again.";
+      return `Too many hosted requests. Wait a moment and try again. ${BRIDGE_HINT}`;
     }
     if (/quota_exhausted/i.test(message)) {
-      return "Hosted inference is out of quota today. Try Inference Bridge, or try again tomorrow.";
+      return `Hosted inference is out of quota today. Try again tomorrow. ${BRIDGE_HINT}`;
+    }
+    if (/Hosted inference disabled/i.test(message)) {
+      return `Hosted inference is unavailable right now. ${BRIDGE_HINT}`;
     }
     return (
       message ||
@@ -160,10 +169,10 @@ export function describeInferenceError(error: unknown): string {
     return message || "The inference request was rejected.";
   }
   if (code === "provider_error" || code === "provider_error") {
-    if (/Hosted inference failed/i.test(message)) {
-      return "The hosted model hit an error. Try again in a moment.";
+    if (/Hosted inference failed|empty hosted inference response/i.test(message)) {
+      return `The hosted model hit an error. Try again in a moment. ${BRIDGE_HINT}`;
     }
-    return message || "The inference provider failed.";
+    return message || `The inference provider failed. ${BRIDGE_HINT}`;
   }
   if (message) return message;
   return "Inference failed.";
