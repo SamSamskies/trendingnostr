@@ -721,15 +721,21 @@ function thinkingConfigForEffort(model, effort) {
 }
 
 function classifyGemini429(body) {
-  const status =
-    body && typeof body === "object" ? body?.error?.status : null;
-  // Gemini often returns opaque RESOURCE_EXHAUSTED + "check billing" for
-  // exhausted daily/plan quotas (including Search Grounding) without PerDay.
-  if (status === "RESOURCE_EXHAUSTED") return "daily";
-  const text = collectStrings(body).join(" ");
+  // RESOURCE_EXHAUSTED covers both short-window RPM/TPM limits and daily/plan
+  // quotas. Prefer explicit quota signals; default to rate (retry soon).
+  const haystack = `${collectStrings(body).join(" ")} ${collectQuotaIds(body).join(" ")}`;
   if (
-    /PerDay|per_day|per day|RequestsPerDay|_rpd\b|exceeded your current quota|billing details|RESOURCE_EXHAUSTED/i.test(
-      text
+    /PerMinute|per_minute|per minute|RequestsPerMinute|_rpm\b|TokensPerMinute|_tpm\b/i.test(
+      haystack
+    )
+  ) {
+    return "rate";
+  }
+  // Opaque "check billing" / "exceeded your current quota" is Gemini's usual
+  // daily/plan message when PerDay is absent (common for Search Grounding).
+  if (
+    /PerDay|per_day|per day|RequestsPerDay|_rpd\b|exceeded your current quota|billing details/i.test(
+      haystack
     )
   ) {
     return "daily";
