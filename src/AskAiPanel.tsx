@@ -35,6 +35,24 @@ import {
 
 const MAX_NOTE_CHARS = 8000;
 
+function linkifyInferenceBridge(text: string) {
+  const label = "Inference Bridge";
+  return text.split(new RegExp(`(${label})`, "g")).map((part, index) =>
+    part === label ? (
+      <a
+        key={`bridge-${index}`}
+        href={INFERENCE_BRIDGE_HREF}
+        target="_blank"
+        rel="noreferrer"
+      >
+        {label}
+      </a>
+    ) : (
+      part
+    )
+  );
+}
+
 type VisibleMessage =
   | { id: string; role: "user"; content: string }
   | {
@@ -773,7 +791,7 @@ export function AskAiPanel({
             if (message.role === "error") {
               return (
                 <div key={message.id} className="ask-ai-msg error">
-                  {message.content}
+                  {linkifyInferenceBridge(message.content)}
                 </div>
               );
             }
