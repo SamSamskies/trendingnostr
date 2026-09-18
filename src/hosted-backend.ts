@@ -145,6 +145,9 @@ export function createHostedBackend(): InferenceBackend {
           if (errorCode === "client_limit") {
             throw makeInferenceError("unavailable", "client_limit");
           }
+          if (errorCode === "search_quota") {
+            throw makeInferenceError("unavailable", "search_quota");
+          }
           if (errorCode === "rate_limited") {
             throw makeInferenceError("unavailable", "rate_limited");
           }

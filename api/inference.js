@@ -591,18 +591,25 @@ export default async function handler(req, res) {
       quota = classifyGemini429(errJson);
       console.warn("[api/inference] provider 429", {
         kind: quota,
+        webSearch: useWebSearch,
         quotaIds: collectQuotaIds(errJson),
         message: geminiErrorMessage(errJson)?.slice(0, 200),
       });
     } catch {
       console.warn("[api/inference] provider 429", {
         kind: quota,
+        webSearch: useWebSearch,
         unreadable: true,
       });
     }
-    res.status(429).json({
-      error: quota === "daily" ? "quota_exhausted" : "rate_limited",
-    });
+    // Grounding has its own (often tiny) quota. When search was on, tell the
+    // client so the UI can suggest turning it off vs a generic rate limit.
+    const error = useWebSearch
+      ? "search_quota"
+      : quota === "daily"
+        ? "quota_exhausted"
+        : "rate_limited";
+    res.status(429).json({ error });
     return;
   }
 
@@ -714,8 +721,19 @@ function thinkingConfigForEffort(model, effort) {
 }
 
 function classifyGemini429(body) {
+  const status =
+    body && typeof body === "object" ? body?.error?.status : null;
+  // Gemini often returns opaque RESOURCE_EXHAUSTED + "check billing" for
+  // exhausted daily/plan quotas (including Search Grounding) without PerDay.
+  if (status === "RESOURCE_EXHAUSTED") return "daily";
   const text = collectStrings(body).join(" ");
-  if (/PerDay|per_day|per day|RequestsPerDay|_rpd\b/i.test(text)) return "daily";
+  if (
+    /PerDay|per_day|per day|RequestsPerDay|_rpd\b|exceeded your current quota|billing details|RESOURCE_EXHAUSTED/i.test(
+      text
+    )
+  ) {
+    return "daily";
+  }
   return "rate";
 }
 
