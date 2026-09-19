@@ -678,6 +678,103 @@ a.note-author-name:hover {
   color: inherit;
 }
 
+.invoice-card {
+  display: block;
+  margin: 0.7rem 0;
+  padding: 0.8rem 0.9rem;
+  border: 1px solid var(--line);
+  border-radius: calc(var(--radius) - 4px);
+  background: rgba(180, 83, 9, 0.045);
+  line-height: 1.4;
+  overflow-wrap: normal;
+}
+
+.invoice-card-heading {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 0.2rem 0.7rem;
+  font-family: var(--font-display);
+  font-size: 0.9rem;
+  font-weight: 650;
+}
+
+.invoice-card-amount { color: var(--accent); }
+.invoice-card-expired { color: var(--muted); }
+
+.invoice-card-meta {
+  margin: 0.15rem 0 0.7rem;
+  color: var(--muted);
+  font-size: 0.75rem;
+}
+
+.invoice-card-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 0.4rem;
+}
+
+.invoice-card-actions > button,
+.invoice-card-actions > a {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 2rem;
+  padding: 0.3rem 0.7rem;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--panel);
+  color: var(--ink);
+  font: inherit;
+  font-size: 0.76rem;
+  font-weight: 600;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.invoice-card-actions > button:hover,
+.invoice-card-actions > a:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.invoice-card-details {
+  margin-top: 0.65rem;
+  color: var(--muted);
+  font-size: 0.74rem;
+}
+
+.invoice-card-details summary {
+  width: fit-content;
+  cursor: pointer;
+}
+
+.invoice-card-raw {
+  margin: 0.5rem 0 0;
+  color: var(--muted);
+  font-family: var(--font-mono);
+  font-size: 0.68rem;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+
+.invoice-card .payment-qr-wrap {
+  margin-top: 0.65rem;
+  margin-bottom: 0.8rem;
+}
+
+.invoice-card-meta + .payment-qr-wrap {
+  margin-top: 0;
+}
+
+.payment-qr-error {
+  margin: 0.4rem 0;
+  color: var(--muted);
+  font-size: 0.78rem;
+}
+
 .note-quote {
   display: block;
   margin: 0.65rem 0;
@@ -1923,7 +2020,7 @@ a.open-in-link:focus-visible,
   border-color: transparent;
 }
 
-.tip-qr-wrap {
+.payment-qr-wrap {
   display: flex;
   justify-content: center;
   width: fit-content;
@@ -1934,7 +2031,7 @@ a.open-in-link:focus-visible,
   background: #fff;
 }
 
-.tip-qr {
+.payment-qr {
   display: block;
   width: min(16rem, 72vw);
   height: auto;

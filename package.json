@@ -17,6 +17,7 @@
     "dev": "vite",
     "dev:vercel": "vercel dev",
     "build": "tsc && vite build",
+    "test": "node --experimental-strip-types --test tests/*.test.mjs",
     "serve": "vite preview",
     "cron:start": "./scripts/trending-cron.sh start",
     "cron:stop": "./scripts/trending-cron.sh stop",
