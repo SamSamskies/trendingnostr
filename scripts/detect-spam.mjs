@@ -39,8 +39,8 @@ const SPAM_INSTRUCTIONS =
 
 /** Authors whose notes are skipped before classification (lowercase hex). */
 const WHITELISTED_AUTHOR_PUBKEYS = new Set([
-  // npub1rcr8h76csgzhdhea4a7tq5w5gydcpg9clgf0cffu6z45rnc6yp5sj7cfuz
   "1e067bfb58820576df3daf7cb051d4411b80a0b8fa12fc253cd0ab41cf1a2069",
+  "64acf4055fa826bcab8457e24ef8fba7490abb1e76dbab6aa8752a53a0eb4d4a",
 ]);
 
 function readWarmSecretFromEnvLocal() {
