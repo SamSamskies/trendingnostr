@@ -55,13 +55,13 @@ The Mac Mini cron rebuilds Runtime Cache via a distinct URL key (`&_warm=1` + `x
 Scan a cached feed with [classifier.dev](https://classifier.dev/) and print [Jumble](https://jumble.social) links for notes that look like spam (confidence ≥ 0.9 by default):
 
 ```sh
-npm run detect-spam -- 4
+npm run detect-spam
 npm run detect-spam -- 12
 npm run detect-spam -- 24 --min-confidence 0.85
-npm run detect-spam -- 4 --json
+npm run detect-spam -- --json
 ```
 
-Hours must be `4`, `12`, `24`, or `48`. Summary lines go to stderr; Jumble URLs go to stdout (pipe-friendly). Defaults to production (`https://trendingnostr.vercel.app`); override with `TRENDING_BASE_URL` / `TRENDING_CRON_BASE_URL` or `--base-url`.
+Hours are optional (`4`, `12`, `24`, or `48`; default `4`). Summary lines go to stderr; Jumble URLs go to stdout (pipe-friendly). Defaults to production (`https://trendingnostr.vercel.app`); override with `TRENDING_BASE_URL` / `TRENDING_CRON_BASE_URL` or `--base-url`.
 
 ### Mac Mini cache warmer
 

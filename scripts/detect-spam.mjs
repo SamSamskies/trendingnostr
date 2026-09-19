@@ -7,10 +7,10 @@
  * and Runtime Cache is rebuilt before classifying.
  *
  * Usage:
- *   npm run detect-spam -- 4
+ *   npm run detect-spam
  *   npm run detect-spam -- 12 --min-confidence 0.85
  *   npm run detect-spam -- 24 --json
- *   npm run detect-spam -- 4 --cached
+ *   npm run detect-spam -- --cached
  *
  * Env:
  *   TRENDING_BASE_URL / TRENDING_CRON_BASE_URL  (default https://trendingnostr.vercel.app)
@@ -24,6 +24,7 @@ import { nip19 } from "nostr-tools";
 
 const DEFAULT_BASE_URL = "https://trendingnostr.vercel.app";
 const DEFAULT_MIN_CONFIDENCE = 0.9;
+const DEFAULT_HOURS = 4;
 const DEFAULT_WARM_SECRET = "1";
 const HOURS_OPTIONS = new Set([4, 12, 24, 48]);
 const CLASSIFIER_URL = "https://classifier.dev";
@@ -69,10 +70,10 @@ function warmSecret() {
 }
 
 function usage(exitCode = 1) {
-  console.error(`Usage: npm run detect-spam -- <hours> [options]
+  console.error(`Usage: npm run detect-spam -- [hours] [options]
 
 Arguments:
-  hours                 Trending window: 4, 12, 24, or 48
+  hours                 Trending window: 4, 12, 24, or 48 (default ${DEFAULT_HOURS})
 
 Options:
   --min-confidence N    Only report spam at or above this confidence (default ${DEFAULT_MIN_CONFIDENCE})
@@ -90,7 +91,7 @@ Env:
 
 function parseArgs(argv) {
   const out = {
-    hours: null,
+    hours: DEFAULT_HOURS,
     minConfidence: DEFAULT_MIN_CONFIDENCE,
     baseUrl:
       process.env.TRENDING_BASE_URL ||
@@ -138,13 +139,15 @@ function parseArgs(argv) {
     positional.push(arg);
   }
 
-  if (positional.length !== 1) usage(1);
-  const hours = Number(positional[0]);
-  if (!HOURS_OPTIONS.has(hours)) {
-    console.error(`error: hours must be one of ${[...HOURS_OPTIONS].join(", ")}`);
-    process.exit(1);
+  if (positional.length > 1) usage(1);
+  if (positional.length === 1) {
+    const hours = Number(positional[0]);
+    if (!HOURS_OPTIONS.has(hours)) {
+      console.error(`error: hours must be one of ${[...HOURS_OPTIONS].join(", ")}`);
+      process.exit(1);
+    }
+    out.hours = hours;
   }
-  out.hours = hours;
   out.baseUrl = out.baseUrl.replace(/\/$/, "");
   return out;
 }
