@@ -29,7 +29,7 @@ import {
   paymentTargetsFromProfile,
   type PaymentTarget,
 } from "./paymentTargets";
-import { encodeQrMatrix } from "./qr";
+import { QrCode } from "./QrCode";
 
 export { hasProfilePaymentTargets };
 
@@ -445,38 +445,4 @@ function formatCacheAge(cachedAt: number | null): string | null {
   if (seconds < 3600) return `${Math.max(1, Math.floor(seconds / 60))}m ago`;
   if (seconds < 86400) return `${Math.max(1, Math.floor(seconds / 3600))}h ago`;
   return `${Math.max(1, Math.floor(seconds / 86400))}d ago`;
-}
-
-function QrCode({ value, label }: { value: string; label: string }) {
-  const matrix = useMemo(() => encodeQrMatrix(value), [value]);
-  if (!matrix) {
-    return (
-      <p className="tip-empty">Could not make a QR code for this address.</p>
-    );
-  }
-
-  const quiet = 4;
-  const dim = matrix.length + quiet * 2;
-  const parts: string[] = [];
-  for (let y = 0; y < matrix.length; y++) {
-    const row = matrix[y];
-    for (let x = 0; x < row.length; x++) {
-      if (row[x]) parts.push(`M${x + quiet} ${y + quiet}h1v1h-1z`);
-    }
-  }
-
-  return (
-    <div className="tip-qr-wrap">
-      <svg
-        className="tip-qr"
-        viewBox={`0 0 ${dim} ${dim}`}
-        shapeRendering="crispEdges"
-        role="img"
-        aria-label={label}
-      >
-        <rect width={dim} height={dim} fill="#fff" />
-        <path d={parts.join("")} fill="#1c1f18" />
-      </svg>
-    </div>
-  );
 }

@@ -20,6 +20,11 @@ import {
   type NoteRef,
 } from "./mentions";
 import { coalesceMedia, type NoteContentToken } from "./noteMedia";
+import {
+  lightningInvoiceRegex,
+  parseLightningInvoice,
+} from "./lightningInvoice";
+import { LightningInvoiceCard } from "./LightningInvoiceCard";
 import type { OpenInKind } from "./nostr-clients";
 import {
   fetchEventById,
@@ -106,7 +111,7 @@ function QuoteBody({
   const emojis = parseEmojiTags(tags);
   const parts = content.split(
     new RegExp(
-      `(?:${newlineRegex.source}|${nostrUriRegex.source}|${hyperlinkRegex.source}${
+      `(?:${newlineRegex.source}|${nostrUriRegex.source}|${hyperlinkRegex.source}|${lightningInvoiceRegex.source}${
         emojis.size > 0 ? `|${customEmojiRegex.source}` : ""
       })`,
       "gi"
@@ -127,6 +132,15 @@ function QuoteBody({
       tokens.push({
         type: "ws",
         node: <Fragment key={index}>{part}</Fragment>,
+      });
+      continue;
+    }
+
+    const invoice = parseLightningInvoice(part);
+    if (invoice) {
+      tokens.push({
+        type: "node",
+        node: <LightningInvoiceCard key={index} invoice={invoice} />,
       });
       continue;
     }

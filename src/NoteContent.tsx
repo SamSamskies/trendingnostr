@@ -23,6 +23,11 @@ import type { OpenInKind } from "./nostr-clients";
 import { QuotedHighlight } from "./QuotedHighlight";
 import { QuotedLongForm } from "./QuotedLongForm";
 import { isQuoteableNoteKind, QuotedNote } from "./QuotedNote";
+import {
+  lightningInvoiceRegex,
+  parseLightningInvoice,
+} from "./lightningInvoice";
+import { LightningInvoiceCard } from "./LightningInvoiceCard";
 
 const wavlakeRegex =
   /(https?:\/\/(?:player\.|www\.)?wavlake\.com\/(?!top|new|artists|account|activity|login|preferences|feed|profile|shows)(?:(?:track|album)\/[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}|[a-z-]+))/gi;
@@ -124,6 +129,14 @@ function classifyPart(
 
   if (/^\s+$/.test(part)) {
     return { type: "ws", node: <Fragment key={index}>{part}</Fragment> };
+  }
+
+  const invoice = parseLightningInvoice(part);
+  if (invoice) {
+    return {
+      type: "node",
+      node: <LightningInvoiceCard key={index} invoice={invoice} />,
+    };
   }
 
   const entity = parseNostrEntity(part);
@@ -316,7 +329,7 @@ export const NoteContent = ({
   const emojis = parseEmojiTags(tags);
   const parts = content.split(
     new RegExp(
-      `(?:${newlineRegex.source}|${nostrUriRegex.source}|${hyperlinkRegex.source}${
+      `(?:${newlineRegex.source}|${nostrUriRegex.source}|${hyperlinkRegex.source}|${lightningInvoiceRegex.source}${
         emojis.size > 0 ? `|${customEmojiRegex.source}` : ""
       })`,
       "gi"
