@@ -50,6 +50,19 @@ The public endpoint is `/api/inference`. The current implementation calls Gemini
 
 The Mac Mini cron rebuilds Runtime Cache via a distinct URL key (`&_warm=1` + `x-trending-refresh`; `Pragma: no-cache` does not bypass a fresh CDN HIT), then warms the public CDN entry. A first visit will still show a network `200` (CDN may be `MISS` or `HIT`); look at `X-Trending-Cache` and Time, not “from disk cache”. The browser prefers this blob and falls back to the legacy client-side path if the API is down.
 
+### Detect spam in a trending window
+
+Scan a cached feed with [classifier.dev](https://classifier.dev/) and print [Jumble](https://jumble.social) links for notes that look like spam (confidence ≥ 0.9 by default):
+
+```sh
+npm run detect-spam -- 4
+npm run detect-spam -- 12
+npm run detect-spam -- 24 --min-confidence 0.85
+npm run detect-spam -- 4 --json
+```
+
+Hours must be `4`, `12`, `24`, or `48`. Summary lines go to stderr; Jumble URLs go to stdout (pipe-friendly). Defaults to production (`https://trendingnostr.vercel.app`); override with `TRENDING_BASE_URL` / `TRENDING_CRON_BASE_URL` or `--base-url`.
+
 ### Mac Mini cache warmer
 
 Keep the production CDN warm from a Mac that stays awake:
