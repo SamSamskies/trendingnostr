@@ -37,6 +37,12 @@ const SPAM_INSTRUCTIONS =
   "bot promotional copy, or low-effort mass advertising. Normal conversation, " +
   "opinions, news, memes, and genuine community posts are not spam.";
 
+/** Authors whose notes are skipped before classification (lowercase hex). */
+const WHITELISTED_AUTHOR_PUBKEYS = new Set([
+  // npub1rcr8h76csgzhdhea4a7tq5w5gydcpg9clgf0cffu6z45rnc6yp5sj7cfuz
+  "1e067bfb58820576df3daf7cb051d4411b80a0b8fa12fc253cd0ab41cf1a2069",
+]);
+
 function readWarmSecretFromEnvLocal() {
   try {
     const root = join(dirname(fileURLToPath(import.meta.url)), "..");
@@ -241,9 +247,14 @@ async function main() {
     console.error(`# rebuilding ${opts.hours}h feed (cache bust)…`);
   }
   const feed = await fetchFeed(opts.baseUrl, opts.hours, { cached: opts.cached });
-  const notes = feed.notes.filter(
+  const allNotes = feed.notes.filter(
     (note) => note && typeof note.id === "string" && typeof note.content === "string"
   );
+  const notes = allNotes.filter((note) => {
+    const pubkey = typeof note.pubkey === "string" ? note.pubkey.toLowerCase() : "";
+    return !WHITELISTED_AUTHOR_PUBKEYS.has(pubkey);
+  });
+  const whitelistedSkipped = allNotes.length - notes.length;
 
   const results = await classifyContents(notes.map((note) => note.content));
 
@@ -270,8 +281,10 @@ async function main() {
         {
           hours: opts.hours,
           scanned: notes.length,
+          feedNotes: allNotes.length,
           minConfidence: opts.minConfidence,
           cacheBust: !opts.cached,
+          whitelistedSkipped,
           spamCount: spam.length,
           spam: spam.map((row) => ({
             id: row.note.id,
@@ -288,8 +301,10 @@ async function main() {
     return;
   }
 
+  const whitelistNote =
+    whitelistedSkipped > 0 ? `, skipped ${whitelistedSkipped} whitelisted` : "";
   console.error(
-    `# ${opts.hours}h feed: ${notes.length} notes → ${spam.length} spam (≥${opts.minConfidence})`
+    `# ${opts.hours}h feed: ${notes.length} notes → ${spam.length} spam (≥${opts.minConfidence})${whitelistNote}`
   );
   for (const row of spam) {
     console.error(`# ${row.confidence.toFixed(2)}  ${preview(row.note.content)}`);
