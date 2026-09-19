@@ -1,29 +1,72 @@
 #!/usr/bin/env node
 /**
- * Scan a cached trending feed for spam via classifier.dev and print Jumble links.
+ * Scan a fresh trending feed for spam via classifier.dev and print Jumble links.
+ *
+ * Fetches `/api/trending` with the same cache-bust path as the Mac Mini warmer
+ * (`&_warm=1` + `x-trending-refresh`) so Pragma/no-cache CDN HITs are bypassed
+ * and Runtime Cache is rebuilt before classifying.
  *
  * Usage:
  *   npm run detect-spam -- 4
  *   npm run detect-spam -- 12 --min-confidence 0.85
  *   npm run detect-spam -- 24 --json
+ *   npm run detect-spam -- 4 --cached
  *
  * Env:
  *   TRENDING_BASE_URL / TRENDING_CRON_BASE_URL  (default https://trendingnostr.vercel.app)
+ *   TRENDING_WARM_SECRET  (must match Vercel if set; default 1; also read from .env.local)
  */
 
+import { readFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { nip19 } from "nostr-tools";
 
 const DEFAULT_BASE_URL = "https://trendingnostr.vercel.app";
 const DEFAULT_MIN_CONFIDENCE = 0.9;
+const DEFAULT_WARM_SECRET = "1";
 const HOURS_OPTIONS = new Set([4, 12, 24, 48]);
 const CLASSIFIER_URL = "https://classifier.dev";
 const USER_AGENT = "trendingnostr-detect-spam/1.0";
 const MAX_RELAY_HINTS = 3;
+const REFRESH_HEADER = "x-trending-refresh";
 
 const SPAM_INSTRUCTIONS =
   "Spam means scams, fake giveaways, phishing, engagement bait, crypto pumps, " +
   "bot promotional copy, or low-effort mass advertising. Normal conversation, " +
   "opinions, news, memes, and genuine community posts are not spam.";
+
+function readWarmSecretFromEnvLocal() {
+  try {
+    const root = join(dirname(fileURLToPath(import.meta.url)), "..");
+    const text = readFileSync(join(root, ".env.local"), "utf8");
+    for (const rawLine of text.split("\n")) {
+      const line = rawLine.trim();
+      if (!line || line.startsWith("#") || !line.startsWith("TRENDING_WARM_SECRET=")) {
+        continue;
+      }
+      let value = line.slice("TRENDING_WARM_SECRET=".length).trim();
+      if (
+        (value.startsWith('"') && value.endsWith('"')) ||
+        (value.startsWith("'") && value.endsWith("'"))
+      ) {
+        value = value.slice(1, -1);
+      }
+      if (value) return value;
+    }
+  } catch {
+    // No .env.local — fall through to default.
+  }
+  return null;
+}
+
+function warmSecret() {
+  return (
+    process.env.TRENDING_WARM_SECRET ||
+    readWarmSecretFromEnvLocal() ||
+    DEFAULT_WARM_SECRET
+  );
+}
 
 function usage(exitCode = 1) {
   console.error(`Usage: npm run detect-spam -- <hours> [options]
@@ -34,11 +77,13 @@ Arguments:
 Options:
   --min-confidence N    Only report spam at or above this confidence (default ${DEFAULT_MIN_CONFIDENCE})
   --base-url URL        Trending API host (default ${DEFAULT_BASE_URL})
+  --cached              Use CDN/Runtime Cache (skip rebuild; faster, may be stale)
   --json                Print JSON instead of one Jumble URL per line
   -h, --help            Show this help
 
 Env:
   TRENDING_BASE_URL / TRENDING_CRON_BASE_URL
+  TRENDING_WARM_SECRET
 `);
   process.exit(exitCode);
 }
@@ -52,6 +97,7 @@ function parseArgs(argv) {
       process.env.TRENDING_CRON_BASE_URL ||
       DEFAULT_BASE_URL,
     json: false,
+    cached: false,
   };
 
   const positional = [];
@@ -60,6 +106,10 @@ function parseArgs(argv) {
     if (arg === "-h" || arg === "--help") usage(0);
     if (arg === "--json") {
       out.json = true;
+      continue;
+    }
+    if (arg === "--cached") {
+      out.cached = true;
       continue;
     }
     if (arg === "--min-confidence") {
@@ -112,14 +162,28 @@ function jumbleHref(note) {
   return `https://jumble.social/${code}`;
 }
 
-async function fetchFeed(baseUrl, hours) {
-  const url = `${baseUrl}/api/trending?hours=${hours}`;
-  const response = await fetch(url, {
-    headers: {
-      Accept: "application/json",
-      "User-Agent": USER_AGENT,
-    },
-  });
+async function fetchFeed(baseUrl, hours, { cached = false } = {}) {
+  // Pragma/Cache-Control: no-cache does not bypass a fresh Vercel CDN HIT.
+  // Same path as trending-cron.sh: distinct URL key + refresh header → origin
+  // rebuilds Runtime Cache and responds no-store.
+  const url = cached
+    ? `${baseUrl}/api/trending?hours=${hours}`
+    : `${baseUrl}/api/trending?hours=${hours}&_warm=1`;
+  /** @type {Record<string, string>} */
+  const headers = {
+    Accept: "application/json",
+    "User-Agent": USER_AGENT,
+  };
+  if (!cached) {
+    headers[REFRESH_HEADER] = warmSecret();
+  }
+
+  const response = await fetch(url, { headers });
+  if (response.status === 401) {
+    throw new Error(
+      `trending API rejected ${REFRESH_HEADER} (set TRENDING_WARM_SECRET to match Vercel)`
+    );
+  }
   if (!response.ok) {
     throw new Error(`trending API HTTP ${response.status} for ${url}`);
   }
@@ -170,7 +234,10 @@ function preview(content, max = 80) {
 
 async function main() {
   const opts = parseArgs(process.argv.slice(2));
-  const feed = await fetchFeed(opts.baseUrl, opts.hours);
+  if (!opts.cached) {
+    console.error(`# rebuilding ${opts.hours}h feed (cache bust)…`);
+  }
+  const feed = await fetchFeed(opts.baseUrl, opts.hours, { cached: opts.cached });
   const notes = feed.notes.filter(
     (note) => note && typeof note.id === "string" && typeof note.content === "string"
   );
@@ -201,6 +268,7 @@ async function main() {
           hours: opts.hours,
           scanned: notes.length,
           minConfidence: opts.minConfidence,
+          cacheBust: !opts.cached,
           spamCount: spam.length,
           spam: spam.map((row) => ({
             id: row.note.id,
