@@ -20,8 +20,20 @@ Lowercase hex only. Imported by `src/nostr.ts` and `lib/trendingFeed.js`. Applie
 
 When the user asks to ban by **lightning address (`lud16`)**, nip-05 host, or display name, append to the matching set in `src/identity.ts` (`BLOCKED_LUD16_ADDRESSES`, `BLOCKED_NIP05_HOSTS`, `BLOCKED_DISPLAY_NAMES`). Those run via `isBlockedAuthorProfile` once profiles load. Prefer also adding known pubkeys to `HIDDEN_AUTHOR_PUBKEYS` when available.
 
+## Hard-ban notes by linked domain
+
+When asked to ban/block notes that **link to a domain** (malware, scam, casino spam), append the hostname to `BANNED_LINK_HOSTS` in `lib/noteContent.js`. Matching is case-insensitive and includes subdomains (`www.` stripped). Applied via `isEligibleTrendingNote` on client + server before ranking.
+
+```js
+// lib/noteContent.js
+export const BANNED_LINK_HOSTS = new Set([/* ... */, "example-scam.com"]);
+```
+
+For soft demotion only (still showable if engagement is huge), use `DOWNRANKED_LINK_HOSTS` instead.
+
 ## Do not
 
 - Add `BLOCKED_PUBKEYS` (or similar) in `identity.ts` — that file is for nip-05 / display names / lud16 only
 - Mute via `muteAuthor` / Settings for a site-wide ban
 - Duplicate the list in `src/nostr.ts` or `lib/trendingFeed.js`
+- Put a hard-ban domain only in `DOWNRANKED_LINK_HOSTS` — that multiplies score by 0.05, it does not drop the note

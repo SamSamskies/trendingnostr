@@ -4,7 +4,7 @@ import {
   SPAM_REPORTER_PUBKEY,
 } from "../lib/hiddenAuthors.js";
 import {
-  hasDisplayableNoteContent,
+  isEligibleTrendingNote,
 } from "../lib/noteContent.js";
 import {
   TRENDING_RELAY,
@@ -91,9 +91,12 @@ export {
   countNoteHashtags,
   countHttpLinks,
   hasDownrankedLinkHost,
+  hasBannedLinkHost,
+  isEligibleTrendingNote,
   MAX_HASHTAG_TAGS,
   MAX_HTTP_LINKS,
   DOWNRANKED_LINK_HOSTS,
+  BANNED_LINK_HOSTS,
 } from "../lib/noteContent.js";
 export type { NoteEngagement };
 
@@ -128,9 +131,9 @@ function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-/** Drop blank and JSON-only kind 1 bodies (bot/protocol spam). */
+/** Drop blank/JSON-only bodies and notes linking banned hosts. */
 function filterEmptyContentNotes<T extends { content: string }>(notes: T[]): T[] {
-  return notes.filter(hasDisplayableNoteContent);
+  return notes.filter(isEligibleTrendingNote);
 }
 
 function isRateLimitedCloseReason(reason: string): boolean {

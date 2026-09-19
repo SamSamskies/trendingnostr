@@ -13,6 +13,12 @@ export declare const MAX_HTTP_LINKS: number;
  */
 export declare const DOWNRANKED_LINK_HOSTS: ReadonlySet<string>;
 
+/**
+ * Hostnames whose links hard-drop a note from the trending feed.
+ * Matched case-insensitively, including subdomains.
+ */
+export declare const BANNED_LINK_HOSTS: ReadonlySet<string>;
+
 /** Cap kind-1 `content` in API / Runtime Cache payloads. */
 export declare const MAX_CACHED_NOTE_CONTENT_CHARS: number;
 
@@ -50,6 +56,21 @@ export declare function countHttpLinks(content: string | undefined): number;
 export declare function hasDownrankedLinkHost(
   content: string | undefined
 ): boolean;
+
+/**
+ * True when content has an http(s) URL whose host is in BANNED_LINK_HOSTS
+ * (exact match or subdomain). Those notes are dropped from the feed.
+ */
+export declare function hasBannedLinkHost(
+  content: string | undefined
+): boolean;
+
+/**
+ * Displayable body and no banned link host — used before ranking / feed assembly.
+ */
+export declare function isEligibleTrendingNote(note: {
+  content?: unknown;
+}): boolean;
 
 /**
  * Truncate oversized note content for cache/API payloads.
