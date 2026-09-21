@@ -41,6 +41,8 @@ const SPAM_INSTRUCTIONS =
 const WHITELISTED_AUTHOR_PUBKEYS = new Set([
   "1e067bfb58820576df3daf7cb051d4411b80a0b8fa12fc253cd0ab41cf1a2069",
   "64acf4055fa826bcab8457e24ef8fba7490abb1e76dbab6aa8752a53a0eb4d4a",
+  "d9f2471cc8f33111071bd0de1fef87d783cc4140e0f70ba9298a53b9e07c60f6",
+  "db64dee83596b7c5638995032dc2822e99a6673ec3a958a5b10921ab9f983bfe",
 ]);
 
 function readWarmSecretFromEnvLocal() {
