@@ -3,6 +3,7 @@ export declare const WINE_TRENDING_API: string;
 export declare const WINE_TRENDING_LIMIT: number;
 export declare const TRENDING_FEED_NOTE_LIMIT: number;
 export declare const TRENDING_FEED_NOTE_LIMIT_4H: number;
+export declare const TRENDING_FEED_NOTE_LIMIT_12H: number;
 export declare function trendingFeedNoteLimit(hours: number): number;
 export declare const RELAY_ALIGNED_TRENDING_HOURS: 48;
 export declare const WINE_MIN_REQUEST_INTERVAL_MS: number;
