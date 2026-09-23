@@ -50,6 +50,11 @@ The public endpoint is `/api/inference`. The current implementation calls Gemini
 
 The Mac Mini cron rebuilds Runtime Cache via a distinct URL key (`&_warm=1` + `x-trending-refresh`; `Pragma: no-cache` does not bypass a fresh CDN HIT), then warms the public CDN entry. A first visit will still show a network `200` (CDN may be `MISS` or `HIT`); look at `X-Trending-Cache` and Time, not “from disk cache”. The browser prefers this blob and falls back to the legacy client-side path if the API is down.
 
+Candidate notes still come from the trending relay / nostr.wine. During the
+server build, zap totals for those existing candidates are supplemented from
+[zap.observer](https://zap.observer/) when its validated rollups report a
+higher amount; zap.observer never contributes new candidate notes.
+
 ### Detect spam in a trending window
 
 Scan a cached feed with [classifier.dev](https://classifier.dev/) and print [Jumble](https://jumble.social) links for notes that look like spam (confidence ≥ 0.9 by default):

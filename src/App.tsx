@@ -895,6 +895,14 @@ export default function App() {
         </>
       ) : null}
 
+      <footer className="data-attribution">
+        Zap totals supplemented by{" "}
+        <a href="https://zap.observer/" target="_blank" rel="noreferrer">
+          zap.observer
+        </a>
+        .
+      </footer>
+
       {settingsOpen ? (
         <SettingsDialog
           profiles={profiles}
