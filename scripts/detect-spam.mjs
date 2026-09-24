@@ -43,6 +43,7 @@ const WHITELISTED_AUTHOR_PUBKEYS = new Set([
   "64acf4055fa826bcab8457e24ef8fba7490abb1e76dbab6aa8752a53a0eb4d4a",
   "d9f2471cc8f33111071bd0de1fef87d783cc4140e0f70ba9298a53b9e07c60f6",
   "db64dee83596b7c5638995032dc2822e99a6673ec3a958a5b10921ab9f983bfe",
+  "e83b66a8ed2d37c07d1abea6e1b000a15549c69508fa4c5875556d52b0526c2b",
 ]);
 
 function readWarmSecretFromEnvLocal() {
