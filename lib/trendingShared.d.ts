@@ -10,6 +10,7 @@ export declare const WINE_MIN_REQUEST_INTERVAL_MS: number;
 
 export declare const EVENT_HYDRATION_RELAYS: readonly string[];
 export declare const ENGAGEMENT_RELAYS: readonly string[];
+export declare const SPAM_REPORT_RELAYS: readonly string[];
 export declare const ENGAGEMENT_BACKFILL_MAX: number;
 export declare const ENGAGEMENT_ID_CHUNK_SIZE: number;
 export declare const ENGAGEMENT_QUERY_LIMIT: number;
