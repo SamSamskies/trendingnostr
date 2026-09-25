@@ -31,6 +31,15 @@ export const BANNED_LINK_HOSTS = new Set([/* ... */, "example-scam.com"]);
 
 For soft demotion only (still showable if engagement is huge), use `DOWNRANKED_LINK_HOSTS` instead.
 
+## Hard-ban notes by hashtag
+
+When asked to ban/block notes that use a **hashtag** (NSFW, scam tags, etc.), append the lowercase tag (no `#`) to `BANNED_HASHTAGS` in `lib/noteContent.js`. Matching is case-insensitive on NIP-12 `t` tags and `#…` in content. Applied via `isEligibleTrendingNote` on client + server before ranking.
+
+```js
+// lib/noteContent.js
+export const BANNED_HASHTAGS = new Set([/* ... */, "nsfw"]);
+```
+
 ## Do not
 
 - Add `BLOCKED_PUBKEYS` (or similar) in `identity.ts` — that file is for nip-05 / display names / lud16 only

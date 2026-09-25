@@ -94,11 +94,13 @@ export {
   countHttpLinks,
   hasDownrankedLinkHost,
   hasBannedLinkHost,
+  hasBannedHashtag,
   isEligibleTrendingNote,
   MAX_HASHTAG_TAGS,
   MAX_HTTP_LINKS,
   DOWNRANKED_LINK_HOSTS,
   BANNED_LINK_HOSTS,
+  BANNED_HASHTAGS,
 } from "../lib/noteContent.js";
 export type { NoteEngagement };
 
@@ -133,7 +135,7 @@ function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-/** Drop blank/JSON-only bodies and notes linking banned hosts. */
+/** Drop blank/JSON-only bodies, banned-link notes, and banned-hashtag notes. */
 function filterEmptyContentNotes<T extends { content: string }>(notes: T[]): T[] {
   return notes.filter(isEligibleTrendingNote);
 }

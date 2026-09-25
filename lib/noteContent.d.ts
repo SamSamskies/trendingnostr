@@ -19,6 +19,12 @@ export declare const DOWNRANKED_LINK_HOSTS: ReadonlySet<string>;
  */
 export declare const BANNED_LINK_HOSTS: ReadonlySet<string>;
 
+/**
+ * Hashtags that hard-drop a note from the trending feed.
+ * Matched case-insensitively on NIP-12 `t` tags and `#…` in content.
+ */
+export declare const BANNED_HASHTAGS: ReadonlySet<string>;
+
 /** Cap kind-1 `content` in API / Runtime Cache payloads. */
 export declare const MAX_CACHED_NOTE_CONTENT_CHARS: number;
 
@@ -66,9 +72,20 @@ export declare function hasBannedLinkHost(
 ): boolean;
 
 /**
- * Displayable body and no banned link host — used before ranking / feed assembly.
+ * True when a note has a hashtag in BANNED_HASHTAGS via NIP-12 `t` tags or
+ * `#…` in content. Those notes are dropped from the feed.
+ */
+export declare function hasBannedHashtag(note: {
+  tags?: string[][];
+  content?: unknown;
+}): boolean;
+
+/**
+ * Displayable body, no banned link host, and no banned hashtag — used before
+ * ranking / feed assembly.
  */
 export declare function isEligibleTrendingNote(note: {
+  tags?: string[][];
   content?: unknown;
 }): boolean;
 
