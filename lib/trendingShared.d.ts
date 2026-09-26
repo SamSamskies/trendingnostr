@@ -4,7 +4,9 @@ export declare const WINE_TRENDING_LIMIT: number;
 export declare const TRENDING_FEED_NOTE_LIMIT: number;
 export declare const TRENDING_FEED_NOTE_LIMIT_4H: number;
 export declare const TRENDING_FEED_NOTE_LIMIT_12H: number;
+export declare const MIN_ENGAGEMENT_POINTS_4H: number;
 export declare function trendingFeedNoteLimit(hours: number): number;
+export declare function trendingFeedMinEngagementPoints(hours: number): number;
 export declare const RELAY_ALIGNED_TRENDING_HOURS: 48;
 export declare const WINE_MIN_REQUEST_INTERVAL_MS: number;
 
@@ -51,6 +53,8 @@ export type RankTrendingNotesOptions = TrendingScoreOptions & {
   nowSec?: number;
 };
 
+export declare function engagementPoints(engagement: NoteEngagement): number;
+
 export declare function excessHashtagRankFactor(hashtagCount: number): number;
 
 export declare function excessHttpLinkRankFactor(linkCount: number): number;
@@ -83,5 +87,6 @@ export declare function rankTrendingNotes<
 export declare function limitTrendingFeed<T extends { id: string }>(
   notes: T[],
   engagementById: Record<string, NoteEngagement>,
-  limit?: number
+  limit?: number,
+  minEngagementPoints?: number
 ): { notes: T[]; engagementById: Record<string, NoteEngagement> };

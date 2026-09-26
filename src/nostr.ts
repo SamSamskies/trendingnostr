@@ -13,6 +13,7 @@ import {
   TRENDING_FEED_NOTE_LIMIT,
   TRENDING_FEED_NOTE_LIMIT_4H,
   TRENDING_FEED_NOTE_LIMIT_12H,
+  MIN_ENGAGEMENT_POINTS_4H,
   RELAY_ALIGNED_TRENDING_HOURS,
   WINE_MIN_REQUEST_INTERVAL_MS,
   EVENT_HYDRATION_RELAYS,
@@ -34,6 +35,8 @@ import {
   excessHashtagRankFactor,
   excessHttpLinkRankFactor,
   trendingFeedNoteLimit,
+  trendingFeedMinEngagementPoints,
+  engagementPoints,
   scoreTrendingNote,
   rankTrendingNotes,
   limitTrendingFeed,
@@ -63,7 +66,10 @@ export {
   TRENDING_FEED_NOTE_LIMIT,
   TRENDING_FEED_NOTE_LIMIT_4H,
   TRENDING_FEED_NOTE_LIMIT_12H,
+  MIN_ENGAGEMENT_POINTS_4H,
   trendingFeedNoteLimit,
+  trendingFeedMinEngagementPoints,
+  engagementPoints,
   RELAY_ALIGNED_TRENDING_HOURS,
   WINE_MIN_REQUEST_INTERVAL_MS,
   EVENT_HYDRATION_RELAYS,
@@ -774,7 +780,8 @@ async function toTrendingFeed(
   const limited = limitTrendingFeed(
     rankTrendingNotes(visible, engagement, { vertexProfilePubkeys }),
     engagement,
-    trendingFeedNoteLimit(hours)
+    trendingFeedNoteLimit(hours),
+    trendingFeedMinEngagementPoints(hours)
   );
   const ranked: TrendingFeed = {
     notes: limited.notes,
@@ -838,7 +845,8 @@ async function applyClientFeedFilters(
   const limited = limitTrendingFeed(
     visible,
     feed.engagementById,
-    trendingFeedNoteLimit(hours)
+    trendingFeedNoteLimit(hours),
+    trendingFeedMinEngagementPoints(hours)
   );
   const next: TrendingFeed = {
     notes: limited.notes,
