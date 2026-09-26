@@ -59,6 +59,16 @@ export declare function excessHashtagRankFactor(hashtagCount: number): number;
 
 export declare function excessHttpLinkRankFactor(linkCount: number): number;
 
+export declare function noteContentRankFactor(note: {
+  tags?: string[][];
+  content?: string;
+}): number;
+
+export declare function demotedEngagementPoints(
+  note: { tags?: string[][]; content?: string },
+  engagement: NoteEngagement
+): number;
+
 export declare function scoreTrendingNote(
   note: {
     created_at: number;
@@ -84,7 +94,9 @@ export declare function rankTrendingNotes<
   options?: RankTrendingNotesOptions
 ): T[];
 
-export declare function limitTrendingFeed<T extends { id: string }>(
+export declare function limitTrendingFeed<
+  T extends { id: string; tags?: string[][]; content?: string },
+>(
   notes: T[],
   engagementById: Record<string, NoteEngagement>,
   limit?: number,
