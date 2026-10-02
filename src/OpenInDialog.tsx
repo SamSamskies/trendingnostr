@@ -61,7 +61,9 @@ export function OpenInDialog({
       }}
     >
       <h2 id={titleId} className="open-in-title">
-        Open in
+        {kind === "hashtag"
+          ? `Open #${code.replace(/^#/, "")} in`
+          : "Open in"}
       </h2>
       <div className="open-in-list">
         {clients.map((client, index) => {

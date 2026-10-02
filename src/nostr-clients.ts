@@ -3,7 +3,7 @@ import type { LocatedEvent } from "./nostr";
 
 export type ClientPlatform = "android" | "ios" | "web";
 
-export type OpenInKind = "note" | "profile" | "address";
+export type OpenInKind = "note" | "profile" | "address" | "hashtag";
 
 export type NostrClient = {
   id: string;
@@ -12,6 +12,8 @@ export type NostrClient = {
   url: string;
   /** Defaults to `url`. Use when the profile path differs (e.g. Primal `/p/` vs `/e/`). */
   profileUrl?: string;
+  /** Hashtag explore URL; `{code}` is the tag without `#`. */
+  hashtagUrl?: string;
 };
 
 /** Keep nevents shareable; extra relays mostly bloat the bech32 string. */
@@ -60,6 +62,7 @@ export const NOSTR_CLIENTS: NostrClient[] = [
     name: "Jumble",
     platform: "web",
     url: "https://jumble.social/{code}",
+    hashtagUrl: "https://jumble.social/notes?t={code}",
   },
   {
     id: "primal-web",
@@ -74,6 +77,7 @@ export const NOSTR_CLIENTS: NostrClient[] = [
     platform: "web",
     url: "https://nostrich.org/e/{code}",
     profileUrl: "https://nostrich.org/p/{code}",
+    hashtagUrl: "https://nostrich.org/?t={code}",
   },
   {
     id: "ditto",
@@ -116,6 +120,9 @@ export const ADDRESS_CLIENT_IDS = new Set([
   "njump",
 ]);
 
+/** Hashtag explore apps (ordered; primary first). */
+export const HASHTAG_CLIENT_IDS = ["nostrich", "jumble"] as const;
+
 export function detectClientPlatform(
   userAgent = typeof navigator === "undefined" ? "" : navigator.userAgent
 ): ClientPlatform {
@@ -133,11 +140,21 @@ export function encodeNevent(note: LocatedEvent): string {
   });
 }
 
+/** Tag body for hashtag URLs: no `#`, lowercase, URI-encoded. */
+export function normalizeHashtagCode(tag: string): string {
+  const value = tag.startsWith("#") ? tag.slice(1) : tag;
+  return encodeURIComponent(value.toLowerCase());
+}
+
 export function clientHref(
   client: NostrClient,
   code: string,
   kind: OpenInKind = "note"
 ): string {
+  if (kind === "hashtag") {
+    const template = client.hashtagUrl ?? client.url;
+    return template.replaceAll("{code}", normalizeHashtagCode(code));
+  }
   const template = kind === "profile" ? (client.profileUrl ?? client.url) : client.url;
   return template.replaceAll("{code}", code);
 }
@@ -146,6 +163,14 @@ export function clientsForPlatform(
   platform: ClientPlatform,
   kind: OpenInKind = "note"
 ): NostrClient[] {
+  if (kind === "hashtag") {
+    const byId = new Map(NOSTR_CLIENTS.map((client) => [client.id, client]));
+    return HASHTAG_CLIENT_IDS.flatMap((id) => {
+      const client = byId.get(id);
+      return client?.hashtagUrl ? [client] : [];
+    });
+  }
+
   const eligible = NOSTR_CLIENTS.filter((client) => {
     if (client.platform === "native" && platform === "web") {
       return false;
@@ -177,8 +202,7 @@ export function isWebClientHref(href: string): boolean {
   return href.startsWith("https://") || href.startsWith("http://");
 }
 
-/** Nostrich hashtag explore URL (`?t=`), lowercase tag body. */
+/** Default hashtag explore URL (Nostrich), for middle-click / no-JS fallback. */
 export function nostrichHashtagHref(tag: string): string {
-  const value = tag.startsWith("#") ? tag.slice(1) : tag;
-  return `https://nostrich.org/?t=${encodeURIComponent(value.toLowerCase())}`;
+  return `https://nostrich.org/?t=${normalizeHashtagCode(tag)}`;
 }
