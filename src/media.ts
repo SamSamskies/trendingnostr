@@ -2,6 +2,8 @@ export type MediaKind = "image" | "video";
 
 export const newlineRegex = /(\r?\n)/gi;
 export const hyperlinkRegex = /(https?:\/\/[^\s]+)/gi;
+/** `#tag` after start/whitespace/punctuation; lookbehind keeps the boundary. */
+export const hashtagRegex = /(?<=^|[\s([{'"“‘])(#[a-zA-Z0-9_]+)/g;
 
 const IMAGE_EXTENSIONS = new Set([
   "png",

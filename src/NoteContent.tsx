@@ -1,6 +1,7 @@
 import { Fragment, useEffect, useState, type ReactNode } from "react";
 import {
   classifyUrl,
+  hashtagRegex,
   hyperlinkRegex,
   newlineRegex,
   normalizeHttpUrl,
@@ -19,7 +20,7 @@ import { isSafeHttpUrl, type Kind0Profile } from "./identity";
 import { LinkPreview } from "./LinkPreview";
 import { coalesceMedia, type NoteContentToken } from "./noteMedia";
 import { KIND_HIGHLIGHT, KIND_LONG_FORM } from "./articleMeta";
-import type { OpenInKind } from "./nostr-clients";
+import { nostrichHashtagHref, type OpenInKind } from "./nostr-clients";
 import { QuotedHighlight } from "./QuotedHighlight";
 import { QuotedLongForm } from "./QuotedLongForm";
 import { isQuoteableNoteKind, QuotedNote } from "./QuotedNote";
@@ -290,6 +291,24 @@ function classifyPart(
     };
   }
 
+  const hashtagMatch = /^#([a-zA-Z0-9_]+)$/.exec(part);
+  if (hashtagMatch) {
+    return {
+      type: "node",
+      node: (
+        <a
+          key={index}
+          className="note-mention"
+          href={nostrichHashtagHref(hashtagMatch[1])}
+          target="_blank"
+          rel="noreferrer"
+        >
+          {part}
+        </a>
+      ),
+    };
+  }
+
   if (!/^https?:\/\//i.test(part)) {
     return { type: "node", node: <Fragment key={index}>{part}</Fragment> };
   }
@@ -329,7 +348,7 @@ export const NoteContent = ({
   const emojis = parseEmojiTags(tags);
   const parts = content.split(
     new RegExp(
-      `(?:${newlineRegex.source}|${nostrUriRegex.source}|${hyperlinkRegex.source}|${lightningInvoiceRegex.source}${
+      `(?:${newlineRegex.source}|${nostrUriRegex.source}|${hyperlinkRegex.source}|${lightningInvoiceRegex.source}|${hashtagRegex.source}${
         emojis.size > 0 ? `|${customEmojiRegex.source}` : ""
       })`,
       "gi"
