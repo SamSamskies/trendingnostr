@@ -16,12 +16,14 @@ import {
   MIN_ENGAGEMENT_POINTS,
   RELAY_ALIGNED_TRENDING_HOURS,
   WINE_MIN_REQUEST_INTERVAL_MS,
+  TRENDING_NOTE_KINDS,
   EVENT_HYDRATION_RELAYS,
   ENGAGEMENT_RELAYS,
   SPAM_REPORT_RELAYS,
   ENGAGEMENT_BACKFILL_MAX,
   ENGAGEMENT_ID_CHUNK_SIZE,
   ENGAGEMENT_QUERY_LIMIT,
+  ENGAGEMENT_EVENT_KINDS,
   RELAY_MAX_WAIT_MS,
   TRENDING_FETCH_ATTEMPTS,
   VERTEX_PROFILE_RELAY,
@@ -34,6 +36,7 @@ import {
   chunkArray,
   excessHashtagRankFactor,
   excessHttpLinkRankFactor,
+  isReplyEngagementKind,
   trendingFeedNoteLimit,
   trendingFeedMinEngagementPoints,
   engagementPoints,
@@ -72,12 +75,14 @@ export {
   engagementPoints,
   RELAY_ALIGNED_TRENDING_HOURS,
   WINE_MIN_REQUEST_INTERVAL_MS,
+  TRENDING_NOTE_KINDS,
   EVENT_HYDRATION_RELAYS,
   ENGAGEMENT_RELAYS,
   SPAM_REPORT_RELAYS,
   ENGAGEMENT_BACKFILL_MAX,
   ENGAGEMENT_ID_CHUNK_SIZE,
   ENGAGEMENT_QUERY_LIMIT,
+  ENGAGEMENT_EVENT_KINDS,
   RELAY_MAX_WAIT_MS,
   TRENDING_FETCH_ATTEMPTS,
   VERTEX_PROFILE_RELAY,
@@ -90,6 +95,7 @@ export {
   chunkArray,
   excessHashtagRankFactor,
   excessHttpLinkRankFactor,
+  isReplyEngagementKind,
   scoreTrendingNote,
   rankTrendingNotes,
   limitTrendingFeed,
@@ -302,7 +308,7 @@ async function hydrateTrendingNotesFromWine(
 
   const { events, closeReason } = await queryRelayOnce(EVENT_HYDRATION_RELAYS, {
     ids,
-    kinds: [1],
+    kinds: [...TRENDING_NOTE_KINDS],
   });
 
   if (events.length === 0) {
@@ -486,12 +492,15 @@ function zapSatsFromReceipt(event: Event): number {
   }
 }
 
-/** Note ids from `e` tags that are in the wanted set (lowercase). */
+/**
+ * Note ids from NIP-10 `e` / NIP-22 `E` tags that are in the wanted set
+ * (lowercase). Kind 1111 roots use uppercase `E`.
+ */
 function taggedWantedIds(event: Event, wanted: Set<string>): string[] {
   const hits: string[] = [];
   const seen = new Set<string>();
   for (const tag of event.tags) {
-    if (tag[0] !== "e" || !isEventId(tag[1])) continue;
+    if ((tag[0] !== "e" && tag[0] !== "E") || !isEventId(tag[1])) continue;
     const id = tag[1].toLowerCase();
     if (!wanted.has(id) || seen.has(id)) continue;
     seen.add(id);
@@ -502,8 +511,8 @@ function taggedWantedIds(event: Event, wanted: Set<string>): string[] {
 
 /**
  * Count reactions / replies / reposts / zap sats for note ids by querying
- * public relays for events that `#e`-tag them. Incomplete vs wine (relay
- * views only) but enough to rank notes wine never returned.
+ * public relays for events that `#e`- or `#E`-tag them. Incomplete vs wine
+ * (relay views only) but enough to rank notes wine never returned.
  */
 async function fetchRelayEngagement(
   noteIds: string[]
@@ -526,17 +535,27 @@ async function fetchRelayEngagement(
   try {
     for (const chunk of chunkArray(wanted, ENGAGEMENT_ID_CHUNK_SIZE)) {
       const settled = await Promise.allSettled(
-        ENGAGEMENT_RELAYS.map((relay) =>
+        ENGAGEMENT_RELAYS.flatMap((relay) => [
           pool.querySync(
             [relay],
             {
-              kinds: [1, 6, 7, 16, 9735],
+              kinds: [...ENGAGEMENT_EVENT_KINDS],
               "#e": chunk,
               limit: ENGAGEMENT_QUERY_LIMIT,
             },
             { maxWait: RELAY_MAX_WAIT_MS }
-          )
-        )
+          ),
+          // NIP-22 nested comments tag the root with uppercase `E` only.
+          pool.querySync(
+            [relay],
+            {
+              kinds: [1111],
+              "#E": chunk,
+              limit: ENGAGEMENT_QUERY_LIMIT,
+            },
+            { maxWait: RELAY_MAX_WAIT_MS }
+          ),
+        ])
       );
 
       for (const result of settled) {
@@ -553,7 +572,7 @@ async function fetchRelayEngagement(
             if (event.kind === 7) eng.reactions += 1;
             else if (event.kind === 6 || event.kind === 16) eng.reposts += 1;
             else if (event.kind === 9735) eng.zapAmount += zapSatsFromReceipt(event);
-            else if (event.kind === 1) eng.replies += 1;
+            else if (isReplyEngagementKind(event.kind)) eng.replies += 1;
           }
         }
       }
@@ -858,7 +877,7 @@ async function applyClientFeedFilters(
 }
 
 /**
- * Fetch trending kind 1 notes for the given window.
+ * Fetch trending notes (kind 1 / 1111) for the given window.
  *
  * Prefers the CDN-cached `/api/trending` blob (warmed by cron). Falls back to
  * the legacy browser path when the API is unavailable (plain Vite, cold fail).
@@ -893,7 +912,7 @@ export async function fetchTrendingFeed(
 
   for (let attempt = 0; attempt < TRENDING_FETCH_ATTEMPTS; attempt++) {
     const { events, closeReason } = await queryRelayOnce([TRENDING_RELAY], {
-      kinds: [1],
+      kinds: [...TRENDING_NOTE_KINDS],
     });
     lastCloseReason = closeReason;
 
