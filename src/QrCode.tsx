@@ -1,5 +1,14 @@
 import { useMemo } from "react";
-import { encodeQrMatrix } from "./qr";
+import { encode } from "uqr";
+
+function encodeQrMatrix(value: string): boolean[][] | null {
+  try {
+    // Quiet zone is drawn by the SVG; keep the matrix module-only.
+    return encode(value, { ecc: "M", border: 0 }).data;
+  } catch {
+    return null;
+  }
+}
 
 export function QrCode({ value, label, fallback = "Could not make a QR code for this address." }: { value: string; label: string; fallback?: string }) {
   const matrix = useMemo(() => encodeQrMatrix(value), [value]);
