@@ -295,15 +295,22 @@ function QuoteBody({
 
     const hashtagMatch = /^#([a-zA-Z0-9_]+)$/.exec(part);
     if (hashtagMatch) {
+      const tag = hashtagMatch[1];
       tokens.push({
         type: "node",
         node: (
           <a
             key={index}
             className="note-mention"
-            href={nostrichHashtagHref(hashtagMatch[1])}
+            href={nostrichHashtagHref(tag)}
             target="_blank"
             rel="noreferrer"
+            onClick={(event) => {
+              if (!onOpen) return;
+              if (!isUnmodifiedLeftClick(event)) return;
+              event.preventDefault();
+              onOpen("hashtag", tag);
+            }}
           >
             {part}
           </a>
