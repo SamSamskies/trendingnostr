@@ -176,3 +176,9 @@ export function clientsForPlatform(
 export function isWebClientHref(href: string): boolean {
   return href.startsWith("https://") || href.startsWith("http://");
 }
+
+/** Nostrich hashtag explore URL (`?t=`), lowercase tag body. */
+export function nostrichHashtagHref(tag: string): string {
+  const value = tag.startsWith("#") ? tag.slice(1) : tag;
+  return `https://nostrich.org/?t=${encodeURIComponent(value.toLowerCase())}`;
+}

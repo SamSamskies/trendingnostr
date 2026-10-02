@@ -3,6 +3,7 @@ import { Avatar } from "./Avatar";
 import { encodeNpub, isSafeHttpUrl, type Kind0Profile } from "./identity";
 import {
   classifyUrl,
+  hashtagRegex,
   hyperlinkRegex,
   newlineRegex,
   normalizeHttpUrl,
@@ -25,7 +26,7 @@ import {
   parseLightningInvoice,
 } from "./lightningInvoice";
 import { LightningInvoiceCard } from "./LightningInvoiceCard";
-import type { OpenInKind } from "./nostr-clients";
+import { nostrichHashtagHref, type OpenInKind } from "./nostr-clients";
 import {
   fetchEventById,
   formatCreateAtDate,
@@ -111,7 +112,7 @@ function QuoteBody({
   const emojis = parseEmojiTags(tags);
   const parts = content.split(
     new RegExp(
-      `(?:${newlineRegex.source}|${nostrUriRegex.source}|${hyperlinkRegex.source}|${lightningInvoiceRegex.source}${
+      `(?:${newlineRegex.source}|${nostrUriRegex.source}|${hyperlinkRegex.source}|${lightningInvoiceRegex.source}|${hashtagRegex.source}${
         emojis.size > 0 ? `|${customEmojiRegex.source}` : ""
       })`,
       "gi"
@@ -285,6 +286,25 @@ function QuoteBody({
         type: "node",
         node: (
           <a key={index} href={url} target="_blank" rel="noreferrer">
+            {part}
+          </a>
+        ),
+      });
+      continue;
+    }
+
+    const hashtagMatch = /^#([a-zA-Z0-9_]+)$/.exec(part);
+    if (hashtagMatch) {
+      tokens.push({
+        type: "node",
+        node: (
+          <a
+            key={index}
+            className="note-mention"
+            href={nostrichHashtagHref(hashtagMatch[1])}
+            target="_blank"
+            rel="noreferrer"
+          >
             {part}
           </a>
         ),
