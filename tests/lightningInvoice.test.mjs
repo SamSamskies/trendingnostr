@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { encode } from "uqr";
 import { lightningInvoiceRegex, parseLightningInvoice } from "../src/lightningInvoice.ts";
-import { encodeQrMatrix } from "../src/qr.ts";
 
 const alphabet = "qpzry9x8gf2tvdw0s3jn54khce6mua7l";
 
@@ -50,7 +50,19 @@ test("recognizes a checksummed invoice and preserves its payment payload", () =>
   assert.equal(parsed?.expiresAt, (1_700_000_000 + 120) * 1000);
   assert.equal(parsed?.uri, `lightning:${raw}`);
   assert.equal(parseLightningInvoice(`lightning:${raw}`)?.raw, raw);
-  assert.ok(encodeQrMatrix(parsed.uri)?.length);
+  assert.ok(encode(parsed.uri, { ecc: "M", border: 0 }).data.length);
+});
+
+test("encodes long bolt11 URIs that exceed the old custom QR version-16 cap", () => {
+  // Real invoice with routing hints (~520 chars with lightning: prefix).
+  const raw =
+    "lnbc50u1p4tljr3pp59evll3qv0874v855w7gwk4jus53m0a65veeentuksfncd03t7ftssp5kcmjm95vap0lytalldy82gvlmz8fx6gc5v3clypkeskyhnmqm35sxqrrssnp4qvyndeaqzman7h898jxm98dzkm0mlrsx36s93smrur7h0azyyuxc5rzjq25carzepgd4vqsyn44jrk85ezrpju92xyrk9apw4cdjh6yrwt5jgqqqqrt49lmtcqqqqqqqqqqq86qq9qrzjqv72ze400mf93pw4sw04upankedqs9usl64ps3nndaf2wpmkp7w3napyqr6zgqqqq8hxk2qqae4jsqyugqcqzpudquvd6hqgr0vcsxxmmxvejk2g8znz2s9qyyssqcuyvdzf4rhnyxfw476fmt9sgx9sq8r56plyf8axy5j52f4u62gc3v3d9zgmqqmscq9k95vu3z7kayp2r0hzepju7rpc7tr3j0fv9fnqqkwngww";
+  const parsed = parseLightningInvoice(raw);
+  assert.ok(parsed);
+  assert.ok(parsed.uri.length > 450);
+  const { data, version } = encode(parsed.uri, { ecc: "M", border: 0 });
+  assert.ok(version > 16);
+  assert.ok(data.length >= 21 + 4 * (version - 1));
 });
 
 test("uses the one-hour default and handles testnet and sub-sat amounts", () => {
