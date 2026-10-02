@@ -39,8 +39,6 @@ import {
   getKind0Profiles,
   readCachedKind0Profiles,
   WINDOW_PAGE_SIZE,
-  WINDOW_PREFETCH_AHEAD,
-  type FayanRevealController,
   type LocatedEvent,
   type NoteEngagement,
 } from "./nostr";
@@ -48,7 +46,6 @@ import {
   muteAuthor,
   setTrendingHours,
   TRENDING_HOURS_OPTIONS,
-  useFayanFilterEnabled,
   useMutedAuthors,
   useTrendingHours,
 } from "./settings";
@@ -74,30 +71,6 @@ function visiblePageLength(eventCount: number, currentLength: number): number {
     return Math.min(WINDOW_PAGE_SIZE, eventCount);
   }
   return capped;
-}
-
-type FayanInFlight = {
-  want: number;
-  promise: Promise<LocatedEvent[]>;
-};
-
-/** Reuse an in-flight ensureRevealed when it already targets enough notes. */
-function startFayanReveal(
-  gate: FayanRevealController,
-  want: number,
-  inFlightRef: { current: FayanInFlight | null }
-): Promise<LocatedEvent[]> {
-  const inflight = inFlightRef.current;
-  if (inflight && inflight.want >= want) {
-    return inflight.promise;
-  }
-  const promise = gate.ensureRevealed(want).finally(() => {
-    if (inFlightRef.current?.promise === promise) {
-      inFlightRef.current = null;
-    }
-  });
-  inFlightRef.current = { want, promise };
-  return promise;
 }
 
 function mergeProfiles(
@@ -342,7 +315,6 @@ function NoteAuthor({
 
 export default function App() {
   const trendingHours = useTrendingHours();
-  const fayanFilter = useFayanFilterEnabled();
   const mutedAuthors = useMutedAuthors();
   const mutedPubkeys = useMemo(
     () => new Set(mutedAuthors),
@@ -355,8 +327,6 @@ export default function App() {
   const [currentDataLength, setCurrentDataLength] = useState(0);
   const [profiles, setProfiles] = useState<Record<string, Kind0Profile>>({});
   const [loading, setLoading] = useState(true);
-  const [fayanBusy, setFayanBusy] = useState(false);
-  const [fayanHasMore, setFayanHasMore] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [reloadToken, setReloadToken] = useState(0);
   const [openTarget, setOpenTarget] = useState<OpenInTarget | null>(null);
@@ -370,29 +340,21 @@ export default function App() {
   const askAiRef = useRef<AskAiPanelHandle>(null);
   const tipRef = useRef<TipDialogHandle>(null);
   const sentinelRef = useRef<HTMLDivElement>(null);
-  const fayanRevealRef = useRef<FayanRevealController | null>(null);
-  const fayanInFlightRef = useRef<FayanInFlight | null>(null);
-  const fayanExpandPendingRef = useRef(false);
 
   useEffect(() => {
     let cancelled = false;
 
     async function load() {
       setLoading(true);
-      setFayanBusy(false);
-      setFayanHasMore(false);
-      fayanRevealRef.current = null;
-      fayanInFlightRef.current = null;
-      fayanExpandPendingRef.current = false;
       setError(null);
       setCurrentDataLength(0);
       setEvents([]);
       setEngagementById({});
 
       try {
-        const { feed, fayanReveal } = await fetchTrendingFeed(trendingHours);
+        const feed = await fetchTrendingFeed(trendingHours);
         if (cancelled) return;
-        // Seed cached kind 0 so known nostrmag.com authors drop before paint.
+        // Seed cached kind 0 so known blocked authors drop before paint.
         const cached = readCachedKind0Profiles(
           feed.notes.map((note) => note.pubkey)
         );
@@ -401,59 +363,17 @@ export default function App() {
         }
 
         setEngagementById(feed.engagementById);
-
-        if (!fayanReveal) {
-          setEvents(feed.notes);
-          setCurrentDataLength(Math.min(WINDOW_PAGE_SIZE, feed.notes.length));
-          if (feed.notes.length === 0) {
-            setError("No trending notes right now. Try again in a moment.");
-          }
-          setLoading(false);
-          return;
-        }
-
+        setEvents(feed.notes);
+        setCurrentDataLength(Math.min(WINDOW_PAGE_SIZE, feed.notes.length));
         if (feed.notes.length === 0) {
           setError("No trending notes right now. Try again in a moment.");
-          setLoading(false);
-          return;
         }
-
-        // CDN ready — skeletons while we resolve just enough authors for page 1.
-        fayanRevealRef.current = fayanReveal;
         setLoading(false);
-        setFayanBusy(true);
-        setFayanHasMore(true);
-
-        const notes = await fayanReveal.ensureRevealed(WINDOW_PAGE_SIZE);
-        if (cancelled) return;
-        setEvents(notes);
-        setCurrentDataLength(Math.min(WINDOW_PAGE_SIZE, notes.length));
-        setFayanHasMore(fayanReveal.hasMore());
-        setFayanBusy(false);
-        if (notes.length === 0 && !fayanReveal.hasMore()) {
-          setError("No trending notes right now. Try again in a moment.");
-        } else if (fayanReveal.hasMore()) {
-          // Warm the next page so scroll expand does not flash skeletons.
-          void startFayanReveal(
-            fayanReveal,
-            WINDOW_PAGE_SIZE + WINDOW_PREFETCH_AHEAD,
-            fayanInFlightRef
-          ).then((more) => {
-            if (cancelled || fayanRevealRef.current !== fayanReveal) return;
-            setEvents(more);
-            setFayanHasMore(fayanReveal.hasMore());
-          });
-        }
       } catch (err) {
         if (cancelled) return;
         setEvents([]);
         setEngagementById({});
         setCurrentDataLength(0);
-        setFayanBusy(false);
-        setFayanHasMore(false);
-        fayanRevealRef.current = null;
-        fayanInFlightRef.current = null;
-        fayanExpandPendingRef.current = false;
         setError(
           err instanceof Error
             ? err.message
@@ -467,7 +387,7 @@ export default function App() {
     return () => {
       cancelled = true;
     };
-  }, [reloadToken, trendingHours, fayanFilter]);
+  }, [reloadToken, trendingHours]);
 
   const displayEvents = useMemo(
     () => filterHiddenAuthors(events, profiles, mutedPubkeys),
@@ -484,8 +404,6 @@ export default function App() {
 
   const allFilteredByMute =
     !loading &&
-    !fayanBusy &&
-    !fayanHasMore &&
     !error &&
     displayEvents.length === 0 &&
     nonBlockedEvents.length > 0 &&
@@ -512,100 +430,27 @@ export default function App() {
     );
   }, [displayEvents.length]);
 
-  // Expand the window, or resolve the next Fayan wave when the buffer is spent.
-  // rootMargin starts this a viewport early; quiet prefetch keeps the next
-  // batch ready so we rarely need skeleton placeholders mid-scroll.
+  // Expand the window when the sentinel scrolls into view.
   useEffect(() => {
     const sentinel = sentinelRef.current;
     if (!sentinel || loading || error) return;
-
-    const canExpandWindow = currentDataLength < displayEvents.length;
-    const canFetchFayan = fayanHasMore && !fayanBusy;
-    if (!canExpandWindow && !canFetchFayan) return;
-
-    const quietPrefetch = (want: number) => {
-      const gate = fayanRevealRef.current;
-      if (!gate?.hasMore()) return;
-      void startFayanReveal(gate, want, fayanInFlightRef).then((notes) => {
-        if (fayanRevealRef.current !== gate) return;
-        setEvents(notes);
-        setFayanHasMore(gate.hasMore());
-      });
-    };
+    if (currentDataLength >= displayEvents.length) return;
 
     const observer = new IntersectionObserver(
       (entries) => {
         if (!entries[0]?.isIntersecting) return;
-
-        if (currentDataLength < displayEvents.length) {
-          setCurrentDataLength((prev) =>
-            prev + WINDOW_PAGE_SIZE < displayEvents.length
-              ? prev + WINDOW_PAGE_SIZE
-              : displayEvents.length
-          );
-          // Refill the off-screen buffer while the user keeps scrolling.
-          if (fayanHasMore) {
-            quietPrefetch(events.length + WINDOW_PREFETCH_AHEAD);
-          }
-          return;
-        }
-
-        const gate = fayanRevealRef.current;
-        if (
-          !gate?.hasMore() ||
-          fayanBusy ||
-          fayanExpandPendingRef.current
-        ) {
-          return;
-        }
-
-        // Target Fayan-approved count (pre-mute/block), not displayEvents —
-        // otherwise muted notes already satisfy the target and no new waves run.
-        const want = events.length + WINDOW_PAGE_SIZE;
-        // A quiet prefetch already covering `want` should finish without
-        // flipping fayanBusy — otherwise mid-scroll skeletons still flash.
-        const coveredByQuiet = Boolean(
-          fayanInFlightRef.current &&
-            fayanInFlightRef.current.want >= want
+        if (currentDataLength >= displayEvents.length) return;
+        setCurrentDataLength((prev) =>
+          prev + WINDOW_PAGE_SIZE < displayEvents.length
+            ? prev + WINDOW_PAGE_SIZE
+            : displayEvents.length
         );
-        if (!coveredByQuiet) {
-          setFayanBusy(true);
-        }
-        fayanExpandPendingRef.current = true;
-        void startFayanReveal(gate, want, fayanInFlightRef)
-          .then((notes) => {
-            if (fayanRevealRef.current !== gate) return;
-            setEvents(notes);
-            setFayanHasMore(gate.hasMore());
-            setCurrentDataLength((prev) =>
-              visiblePageLength(notes.length, Math.max(prev, want))
-            );
-            if (gate.hasMore()) {
-              quietPrefetch(notes.length + WINDOW_PREFETCH_AHEAD);
-            }
-            if (notes.length === 0 && !gate.hasMore()) {
-              setError("No trending notes right now. Try again in a moment.");
-            }
-          })
-          .finally(() => {
-            if (fayanRevealRef.current !== gate) return;
-            fayanExpandPendingRef.current = false;
-            setFayanBusy(false);
-          });
       },
       { rootMargin: "0px 0px 800px 0px" }
     );
     observer.observe(sentinel);
     return () => observer.disconnect();
-  }, [
-    loading,
-    error,
-    currentDataLength,
-    displayEvents.length,
-    events.length,
-    fayanHasMore,
-    fayanBusy,
-  ]);
+  }, [loading, error, currentDataLength, displayEvents.length]);
 
   const visibleEvents = useMemo(
     () =>
@@ -736,10 +581,7 @@ export default function App() {
         </>
       ) : null}
 
-      {!loading &&
-      !fayanBusy &&
-      !fayanHasMore &&
-      (error || displayEvents.length === 0) ? (
+      {!loading && (error || displayEvents.length === 0) ? (
         <div className="status status-error" role="status">
           <p>
             {error ??
@@ -767,15 +609,8 @@ export default function App() {
         </div>
       ) : null}
 
-      {!loading &&
-      !error &&
-      (visibleEvents.length > 0 || fayanBusy || fayanHasMore) ? (
+      {!loading && !error && visibleEvents.length > 0 ? (
         <>
-          {fayanBusy ? (
-            <p className="visually-hidden" role="status">
-              Filtering notes by reputation…
-            </p>
-          ) : null}
           <ol className="results">
             {visibleEvents.map((note) => {
               const engagement = engagementById[note.id.toLowerCase()];
@@ -878,18 +713,6 @@ export default function App() {
                 </li>
               );
             })}
-            {fayanBusy ||
-            (fayanHasMore && visibleEvents.length < WINDOW_PAGE_SIZE)
-              ? SKELETON_LINE_COUNTS.slice(
-                  0,
-                  Math.max(1, WINDOW_PAGE_SIZE - visibleEvents.length)
-                ).map((lines, index) => (
-                  <NoteSkeleton
-                    key={`fayan-skel-${index}`}
-                    lines={lines}
-                  />
-                ))
-              : null}
           </ol>
           <div ref={sentinelRef} className="sentinel" aria-hidden="true" />
         </>

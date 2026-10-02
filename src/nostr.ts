@@ -48,17 +48,7 @@ import {
 import { fetchVertexProfilePubkeys } from "../lib/vertexProfiles.js";
 import { isPrivateOrLocalHostname, parseKind0Profile, type Kind0Profile } from "./identity";
 import { PAYTO_KIND } from "./paymentTargets";
-import {
-  FAYAN_CONCURRENCY,
-  fetchFayanUsers,
-  revealedNotesPrefix,
-  uniquePubkeysInOrder,
-  type FayanUserMap,
-} from "./fayan";
-import {
-  isFayanFilterEnabled,
-  type TrendingHours,
-} from "./settings";
+import { type TrendingHours } from "./settings";
 
 export type LocatedEvent = Event & { seenOn: string[] };
 
@@ -123,8 +113,6 @@ const SPAM_REPORT_QUERY_LIMIT = 200;
 
 /** Initial notes shown; more reveal as the sentinel scrolls into view. */
 export const WINDOW_PAGE_SIZE = 5;
-/** Extra Fayan-approved notes to keep ready ahead of the visible window. */
-export const WINDOW_PREFETCH_AHEAD = 10;
 export const AUTHOR_CHUNK_SIZE = 100;
 /** Revalidate kind 0 entries after this age; stale cache is still served instantly. */
 export const PROFILE_CACHE_TTL_MS = 60 * 60 * 1000;
@@ -705,84 +693,11 @@ export type TrendingFeed = {
   engagementById: Record<string, NoteEngagement>;
 };
 
-/**
- * When Fayan is on, `feed.notes` are hashtag-filtered candidates. Call
- * `fayanReveal.ensureRevealed(n)` after paint (and again on scroll) to resolve
- * only as many author waves as needed for `n` visible notes.
- */
-export type FayanRevealController = {
-  /** Fetch waves until at least `minNotes` pass filter, or candidates run out. */
-  ensureRevealed: (minNotes: number) => Promise<LocatedEvent[]>;
-  /** True while unchecked candidate authors remain. */
-  hasMore: () => boolean;
-};
-
-export type TrendingFeedResult = {
-  feed: TrendingFeed;
-  fayanReveal?: FayanRevealController;
-};
-
-/**
- * Lazy Fayan gate: resolve author waves on demand so a no-scroll visit only
- * pays for the first page. Failed waves fail-open those authors.
- */
-function attachFayanReveal(feed: TrendingFeed): TrendingFeedResult {
-  if (feed.notes.length === 0) return { feed };
-
-  const candidates = feed.notes;
-  const ordered = uniquePubkeysInOrder(candidates);
-  let nextIndex = 0;
-  const users: FayanUserMap = new Map();
-  const resolved = new Set<string>();
-  const passThrough = new Set<string>();
-  let chain: Promise<unknown> = Promise.resolve();
-
-  const snapshot = () =>
-    revealedNotesPrefix(candidates, users, resolved, passThrough);
-
-  const ensureRevealed = (minNotes: number): Promise<LocatedEvent[]> => {
-    const run = async () => {
-      while (snapshot().length < minNotes && nextIndex < ordered.length) {
-        const chunk = ordered.slice(
-          nextIndex,
-          nextIndex + FAYAN_CONCURRENCY
-        );
-        nextIndex += chunk.length;
-        const batch = await fetchFayanUsers(chunk);
-        if (!batch) {
-          for (const pubkey of chunk) passThrough.add(pubkey);
-        } else {
-          for (const pubkey of chunk) resolved.add(pubkey);
-          for (const [pubkey, user] of batch) {
-            users.set(pubkey, user);
-          }
-        }
-      }
-      return snapshot();
-    };
-
-    const done = chain.then(run, run);
-    chain = done.then(
-      () => undefined,
-      () => undefined
-    );
-    return done;
-  };
-
-  return {
-    feed,
-    fayanReveal: {
-      ensureRevealed,
-      hasMore: () => nextIndex < ordered.length,
-    },
-  };
-}
-
 async function toTrendingFeed(
   notes: LocatedEvent[],
   engagementById: Record<string, NoteEngagement>,
   hours: TrendingHours
-): Promise<TrendingFeedResult> {
+): Promise<TrendingFeed> {
   const withContent = filterEmptyContentNotes(notes);
   const [engagement, spamIds, vertexProfilePubkeys] = await Promise.all([
     enrichEngagementFromRelays(withContent, engagementById),
@@ -795,20 +710,16 @@ async function toTrendingFeed(
       ? withContent
       : withContent.filter((note) => !spamIds.has(note.id.toLowerCase()));
 
-  // Rank before Fayan so reveal waves follow feed order.
   const limited = limitTrendingFeed(
     rankTrendingNotes(visible, engagement, { vertexProfilePubkeys }),
     engagement,
     trendingFeedNoteLimit(hours),
     trendingFeedMinEngagementPoints(hours)
   );
-  const ranked: TrendingFeed = {
+  return {
     notes: limited.notes,
     engagementById: limited.engagementById,
   };
-
-  if (!isFayanFilterEnabled()) return { feed: ranked };
-  return attachFayanReveal(ranked);
 }
 
 /** Prefer the CDN-cached `/api/trending` blob; null on miss / error. */
@@ -851,13 +762,13 @@ async function fetchTrendingFeedFromApi(
 }
 
 /**
- * Fayan filter depends on local settings — apply after the shared server blob
- * (already ranked, spam-filtered, and capped per window).
+ * Drop empties and re-apply the per-window cap after the shared server blob
+ * (already ranked and spam-filtered).
  */
-async function applyClientFeedFilters(
+function applyClientFeedFilters(
   feed: TrendingFeed,
   hours: TrendingHours
-): Promise<TrendingFeedResult> {
+): TrendingFeed {
   // Also drop empties on the API path so stale CDN blobs clear immediately.
   const visible = filterEmptyContentNotes(feed.notes);
 
@@ -867,13 +778,10 @@ async function applyClientFeedFilters(
     trendingFeedNoteLimit(hours),
     trendingFeedMinEngagementPoints(hours)
   );
-  const next: TrendingFeed = {
+  return {
     notes: limited.notes,
     engagementById: limited.engagementById,
   };
-
-  if (!isFayanFilterEnabled()) return { feed: next };
-  return attachFayanReveal(next);
 }
 
 /**
@@ -891,7 +799,7 @@ async function applyClientFeedFilters(
  */
 export async function fetchTrendingFeed(
   hours: TrendingHours = RELAY_ALIGNED_TRENDING_HOURS
-): Promise<TrendingFeedResult> {
+): Promise<TrendingFeed> {
   const cached = await fetchTrendingFeedFromApi(hours);
   if (cached) {
     return applyClientFeedFilters(cached, hours);
@@ -976,7 +884,7 @@ export async function fetchTrendingFeed(
 
 async function fetchTrendingFeedFromWine(
   hours: TrendingHours
-): Promise<TrendingFeedResult> {
+): Promise<TrendingFeed> {
   let wine: WineTrendingPayload;
   try {
     wine = await fetchWineTrending(hours);
