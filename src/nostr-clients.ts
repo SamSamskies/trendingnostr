@@ -70,6 +70,7 @@ export const NOSTR_CLIENTS: NostrClient[] = [
     platform: "web",
     url: "https://primal.net/e/{code}",
     profileUrl: "https://primal.net/p/{code}",
+    hashtagUrl: "https://primal.net/search/%23{code}",
   },
   {
     id: "nostrich",
@@ -84,6 +85,7 @@ export const NOSTR_CLIENTS: NostrClient[] = [
     name: "Ditto",
     platform: "web",
     url: "https://ditto.pub/{code}",
+    hashtagUrl: "https://ditto.pub/t/{code}",
   },
   {
     id: "quotestr",
@@ -121,7 +123,12 @@ export const ADDRESS_CLIENT_IDS = new Set([
 ]);
 
 /** Hashtag explore apps (ordered; primary first). */
-export const HASHTAG_CLIENT_IDS = ["nostrich", "jumble"] as const;
+export const HASHTAG_CLIENT_IDS = [
+  "nostrich",
+  "primal-web",
+  "ditto",
+  "jumble",
+] as const;
 
 export function detectClientPlatform(
   userAgent = typeof navigator === "undefined" ? "" : navigator.userAgent
