@@ -1,0 +1,30 @@
+{"id":"spam-btc-giveaway","label":"spam","content":"🎉 FREE BITCOIN GIVEAWAY 🎉\nSend 0.01 BTC to bc1qexample and get 1 BTC back instantly!\nLimited to first 50 people. DM me for proof."}
+{"id":"spam-airdrop-link","label":"spam","content":"Claim your $NOSTR airdrop before it expires!\nConnect wallet here: https://claim-nostr-airdrop.example/verify\nOnly 2 hours left 🔥🔥🔥"}
+{"id":"spam-engagement-bait","label":"spam","content":"LIKE + REPOST + FOLLOW and I'll zap 10,000 sats to a random person in 1 hour!!!\nMust follow to win. Tag 3 friends."}
+{"id":"spam-casino","label":"spam","content":"Best Nostr casino — deposit Lightning, withdraw instantly.\n100% welcome bonus code: NOSTR100\nPlay now: https://shady-casino.example"}
+{"id":"spam-seed-phish","label":"spam","content":"Your Lightning wallet will be deactivated unless you verify seed phrase at https://wallet-secure-check.example within 24h."}
+{"id":"spam-pump","label":"spam","content":"$MOON about to 100x. Dev doxxed. LP locked. Buy now before CEX listing tomorrow.\nChart: https://pump-chart.example"}
+{"id":"spam-follow-bot","label":"spam","content":"I follow back everyone who follows me! Grow your Nostr network fast 🚀\n#follow4follow #nofollowback"}
+{"id":"spam-dating","label":"spam","content":"Lonely tonight 💋 looking for someone to chat… add me on Telegram @hotnostrgirl for pics"}
+{"id":"spam-duplicate-promo","label":"spam","content":"Check out my new AI girlfriend app — free trial for Nostr users only.\nhttps://ai-gf-spam.example\nReply YES for invite code."}
+{"id":"spam-investment","label":"spam","content":"I made $12,400 last week copying this trader's signals. Join the private group (spots left): https://signals-vip.example"}
+{"id":"spam-nft-mint","label":"spam","content":"Free mint live NOW. Whitelist closing in 15 minutes.\nMint: https://free-mint-rug.example\nFloor already 0.5 ETH on secondary foreshadow 👀"}
+{"id":"spam-malware-link","label":"spam","content":"Urgent security update for Damus users — install the patch here or your DMs may be exposed:\nhttps://damus-security-update.example/download"}
+{"id":"ham-bitcoin-opinion","label":"not spam","content":"Still think soft forks are underrated. Activation politics aside, the technical tradeoffs on this BIP are interesting."}
+{"id":"ham-meetup","label":"not spam","content":"Austin Nostr meetup Thursday 7pm at the usual coffee shop. Bring a node joke and a friend. Zaps for first-timers."}
+{"id":"ham-news","label":"not spam","content":"Lightning Network capacity hit a new high this month. Good writeup from Bitcoin Magazine if you want the numbers."}
+{"id":"ham-meme","label":"not spam","content":"me waiting for my zap to confirm while the coffee gets cold\n\n🙃"}
+{"id":"ham-question","label":"not spam","content":"Anyone have a recommended relay setup for a small community that wants good spam filtering without going fully private?"}
+{"id":"ham-dev-update","label":"not spam","content":"Shipped a fix for duplicate reactions in the feed. If you're on the latest build and still see ghosts, please reply with the event id."}
+{"id":"ham-art","label":"not spam","content":"Finished this watercolor of the river near my place. No sale, just sharing because the light was perfect today."}
+{"id":"ham-politics","label":"not spam","content":"I disagree with the framing here — the bill is bad, but the counterargument in that thread is even worse. Read the primary text."}
+{"id":"ham-thanks","label":"not spam","content":"Thanks for the zap and the book recommendation. Started chapter 2 on the train this morning."}
+{"id":"ham-weather","label":"not spam","content":"Storm rolled through and knocked out power for an hour. Glad the UPS kept the relay up."}
+{"id":"ham-tech-link","label":"not spam","content":"Useful explainer on NIP-17 gift wraps if you're implementing private DMs:\nhttps://nips.nostr.com/17"}
+{"id":"edge-zap-thanks-promo","label":"not spam","content":"Wrote a long essay on why open protocols matter. If it resonates, a zap helps me write the next one — no pressure either way."}
+{"id":"edge-self-promo-project","label":"not spam","content":"I've been building a small FOSS client on weekends. Feedback welcome; repo is public and there's no token."}
+{"id":"edge-crypto-discussion","label":"not spam","content":"Curious what people think about fee markets after the next halving. Not financial advice — just trying to sanity-check my model."}
+{"id":"edge-giveaway-joke","label":"not spam","content":"Giving away one (1) imaginary internet point to whoever replies with the worst relay outage story."}
+{"id":"edge-subtle-scam","label":"spam","content":"Hey, saw your note about Lightning. I run a small recovery service for stuck channels — DM your node pubkey and I'll check for free."}
+{"id":"edge-copy-paste-bot","label":"spam","content":"gm nostr\ngm nostr\ngm nostr\nFollow me for daily alpha and exclusive WL spots 💎"}
+{"id":"edge-short-scam","label":"spam","content":"Double your sats in 10 minutes. DM \"DOUBLE\"."}
