@@ -57,23 +57,26 @@ higher amount; zap.observer never contributes new candidate notes.
 
 ### Detect spam in a trending window
 
-Scan a cached feed and print [Jumble](https://jumble.social) links for notes that look like spam (confidence ≥ 0.9 by default). Default classifier is [classifier.dev](https://classifier.dev/); pass `--ollama` to use a local [Ollama decision model](https://docs.ollama.com/capabilities/decision) instead:
+Scan a cached feed and print [Jumble](https://jumble.social) links for notes that look like spam (confidence ≥ 0.9 by default). Defaults to a local [Ollama decision model](https://docs.ollama.com/capabilities/decision) (`clef-flash`); pass `--classifier` to use [classifier.dev](https://classifier.dev/) instead:
 
 ```sh
 npm run detect-spam
 npm run detect-spam -- 12
 npm run detect-spam -- 24 --min-confidence 0.85
 npm run detect-spam -- --json
-npm run detect-spam -- --ollama --model nimble
-npm run detect-spam -- --ollama --model clef --cached
+npm run detect-spam -- --model nimble
+npm run detect-spam -- --model clef --cached
+npm run detect-spam -- --classifier
 ```
 
 Compare decision models on the labeled fixture (`scripts/fixtures/spam-eval.jsonl`):
 
 ```sh
-npm run detect-spam:eval -- --ollama --model nimble
+npm run detect-spam:eval
+npm run detect-spam:eval -- --model nimble
 npm run detect-spam:eval -- --models nimble,clef
 npm run detect-spam:eval -- --models nimble,clef --json
+npm run detect-spam:eval -- --classifier
 ```
 
 Hours are optional (`4`, `12`, `24`, or `48`; default `4`). Summary lines go to stderr; Jumble URLs go to stdout (pipe-friendly). Defaults to production (`https://trendingnostr.vercel.app`); override with `TRENDING_BASE_URL` / `TRENDING_CRON_BASE_URL` or `--base-url`. Ollama host defaults to `http://localhost:11434` (`OLLAMA_HOST` / `--ollama-host`).

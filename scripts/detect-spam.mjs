@@ -2,8 +2,9 @@
 /**
  * Scan a fresh trending feed for spam and print Jumble links.
  *
- * Default provider is classifier.dev. Pass `--ollama` to use a local Ollama
- * System One decision model instead (https://docs.ollama.com/capabilities/decision).
+ * Default provider is a local Ollama System One decision model
+ * (https://docs.ollama.com/capabilities/decision). Pass `--classifier` to use
+ * classifier.dev instead.
  *
  * Fetches `/api/trending` with the same cache-bust path as the Mac Mini warmer
  * (`&_warm=1` + `x-trending-refresh`) so Pragma/no-cache CDN HITs are bypassed
@@ -12,8 +13,9 @@
  * Usage:
  *   npm run detect-spam
  *   npm run detect-spam -- 12 --min-confidence 0.85
- *   npm run detect-spam -- --ollama --model nimble
- *   npm run detect-spam -- --ollama --model clef --cached
+ *   npm run detect-spam -- --model nimble
+ *   npm run detect-spam -- --model clef --cached
+ *   npm run detect-spam -- --classifier
  *   npm run detect-spam -- --eval
  *   npm run detect-spam -- --eval --models nimble,clef
  *
@@ -34,7 +36,7 @@ const DEFAULT_MIN_CONFIDENCE = 0.9;
 const DEFAULT_HOURS = 4;
 const DEFAULT_WARM_SECRET = "1";
 const DEFAULT_OLLAMA_HOST = "http://localhost:11434";
-const DEFAULT_OLLAMA_MODEL = "nimble";
+const DEFAULT_OLLAMA_MODEL = "clef-flash";
 const DEFAULT_OLLAMA_CONCURRENCY = 4;
 const DEFAULT_EVAL_PATH = join(SCRIPT_DIR, "fixtures", "spam-eval.jsonl");
 const HOURS_OPTIONS = new Set([4, 12, 24, 48]);
@@ -107,8 +109,9 @@ Options:
   --min-confidence N    Only report spam at or above this confidence (default ${DEFAULT_MIN_CONFIDENCE})
   --base-url URL        Trending API host (default ${DEFAULT_BASE_URL})
   --cached              Use CDN/Runtime Cache (skip rebuild; faster, may be stale)
-  --provider NAME       classifier (default) or ollama
+  --provider NAME       ollama (default) or classifier
   --ollama              Shorthand for --provider ollama
+  --classifier          Shorthand for --provider classifier
   --model NAME          Ollama decision model (default ${DEFAULT_OLLAMA_MODEL})
   --models LIST         Comma-separated models for --eval comparison
   --ollama-host URL     Ollama base URL (default ${DEFAULT_OLLAMA_HOST} or OLLAMA_HOST)
@@ -142,7 +145,7 @@ function parseArgs(argv) {
       DEFAULT_BASE_URL,
     json: false,
     cached: false,
-    provider: "classifier",
+    provider: "ollama",
     model: DEFAULT_OLLAMA_MODEL,
     models: null,
     modelSet: false,
@@ -166,6 +169,10 @@ function parseArgs(argv) {
     }
     if (arg === "--ollama") {
       out.provider = "ollama";
+      continue;
+    }
+    if (arg === "--classifier") {
+      out.provider = "classifier";
       continue;
     }
     if (arg === "--provider") {
