@@ -22,7 +22,8 @@
  * Env:
  *   TRENDING_BASE_URL / TRENDING_CRON_BASE_URL  (default https://trendingnostr.vercel.app)
  *   TRENDING_WARM_SECRET  (must match Vercel if set; default 1; also read from .env.local)
- *   OLLAMA_HOST           (default http://localhost:11434)
+ *   OLLAMA_HOST           (default http://localhost:11434; also .env.local)
+ *   OLLAMA_MODEL          (default clef-flash; also .env.local; overridden by --model)
  */
 
 import { readFileSync } from "node:fs";
@@ -61,22 +62,24 @@ const OLLAMA_CRITERIA = {
 /** Authors whose notes are skipped before classification (lowercase hex). */
 const WHITELISTED_AUTHOR_PUBKEYS = new Set([
   "1e067bfb58820576df3daf7cb051d4411b80a0b8fa12fc253cd0ab41cf1a2069",
+  "4d7842051782e0d3feb034d150adc2b6bae4ee3b49786793bffa468b6f5b96b3",
   "64acf4055fa826bcab8457e24ef8fba7490abb1e76dbab6aa8752a53a0eb4d4a",
   "d9f2471cc8f33111071bd0de1fef87d783cc4140e0f70ba9298a53b9e07c60f6",
   "db64dee83596b7c5638995032dc2822e99a6673ec3a958a5b10921ab9f983bfe",
   "e83b66a8ed2d37c07d1abea6e1b000a15549c69508fa4c5875556d52b0526c2b",
 ]);
 
-function readWarmSecretFromEnvLocal() {
+function readEnvLocal(key) {
   try {
     const root = join(SCRIPT_DIR, "..");
     const text = readFileSync(join(root, ".env.local"), "utf8");
+    const prefix = `${key}=`;
     for (const rawLine of text.split("\n")) {
       const line = rawLine.trim();
-      if (!line || line.startsWith("#") || !line.startsWith("TRENDING_WARM_SECRET=")) {
+      if (!line || line.startsWith("#") || !line.startsWith(prefix)) {
         continue;
       }
-      let value = line.slice("TRENDING_WARM_SECRET=".length).trim();
+      let value = line.slice(prefix.length).trim();
       if (
         (value.startsWith('"') && value.endsWith('"')) ||
         (value.startsWith("'") && value.endsWith("'"))
@@ -91,12 +94,12 @@ function readWarmSecretFromEnvLocal() {
   return null;
 }
 
+function envOrLocal(key) {
+  return process.env[key] || readEnvLocal(key) || null;
+}
+
 function warmSecret() {
-  return (
-    process.env.TRENDING_WARM_SECRET ||
-    readWarmSecretFromEnvLocal() ||
-    DEFAULT_WARM_SECRET
-  );
+  return envOrLocal("TRENDING_WARM_SECRET") || DEFAULT_WARM_SECRET;
 }
 
 function usage(exitCode = 1) {
@@ -112,7 +115,7 @@ Options:
   --provider NAME       ollama (default) or classifier
   --ollama              Shorthand for --provider ollama
   --classifier          Shorthand for --provider classifier
-  --model NAME          Ollama decision model (default ${DEFAULT_OLLAMA_MODEL})
+  --model NAME          Ollama decision model (default ${DEFAULT_OLLAMA_MODEL} or OLLAMA_MODEL)
   --models LIST         Comma-separated models for --eval comparison
   --ollama-host URL     Ollama base URL (default ${DEFAULT_OLLAMA_HOST} or OLLAMA_HOST)
   --concurrency N       Parallel Ollama requests (default ${DEFAULT_OLLAMA_CONCURRENCY})
@@ -120,10 +123,11 @@ Options:
   --json                Print JSON instead of one Jumble URL per line
   -h, --help            Show this help
 
-Env:
+Env (process env or .env.local):
   TRENDING_BASE_URL / TRENDING_CRON_BASE_URL
   TRENDING_WARM_SECRET
   OLLAMA_HOST
+  OLLAMA_MODEL
 `);
   process.exit(exitCode);
 }
@@ -146,10 +150,10 @@ function parseArgs(argv) {
     json: false,
     cached: false,
     provider: "ollama",
-    model: DEFAULT_OLLAMA_MODEL,
+    model: envOrLocal("OLLAMA_MODEL") || DEFAULT_OLLAMA_MODEL,
     models: null,
     modelSet: false,
-    ollamaHost: process.env.OLLAMA_HOST || DEFAULT_OLLAMA_HOST,
+    ollamaHost: envOrLocal("OLLAMA_HOST") || DEFAULT_OLLAMA_HOST,
     concurrency: DEFAULT_OLLAMA_CONCURRENCY,
     evalPath: null,
     eval: false,
