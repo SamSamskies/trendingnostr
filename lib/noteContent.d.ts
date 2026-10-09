@@ -20,6 +20,15 @@ export declare const DOWNRANKED_LINK_HOSTS: ReadonlySet<string>;
 export declare const BANNED_LINK_HOSTS: ReadonlySet<string>;
 
 /**
+ * Temporary hashtag soft demotions. Each entry expires after `until` (ISO 8601).
+ * Matched case-insensitively on NIP-12 `t` tags and `#…` in content.
+ */
+export declare const DOWNRANKED_HASHTAGS: ReadonlyArray<{
+  tag: string;
+  until: string;
+}>;
+
+/**
  * Hashtags that hard-drop a note from the trending feed.
  * Matched case-insensitively on NIP-12 `t` tags and `#…` in content.
  */
@@ -72,6 +81,11 @@ export declare function hasBannedLinkHost(
 ): boolean;
 
 /**
+ * Active tags from DOWNRANKED_HASHTAGS whose `until` is still in the future.
+ */
+export declare function activeDownrankedHashtags(nowMs?: number): Set<string>;
+
+/**
  * True when a note has a hashtag in BANNED_HASHTAGS via NIP-12 `t` tags or
  * `#…` in content. Those notes are dropped from the feed.
  */
@@ -79,6 +93,17 @@ export declare function hasBannedHashtag(note: {
   tags?: string[][];
   content?: unknown;
 }): boolean;
+
+/**
+ * True when a note has an active downranked hashtag (not yet past `until`).
+ */
+export declare function hasDownrankedHashtag(
+  note: {
+    tags?: string[][];
+    content?: unknown;
+  },
+  nowMs?: number
+): boolean;
 
 /**
  * Displayable body, no banned link host, and no banned hashtag — used before

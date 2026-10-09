@@ -40,6 +40,18 @@ When asked to ban/block notes that use a **hashtag** (NSFW, scam tags, etc.), ap
 export const BANNED_HASHTAGS = new Set([/* ... */, "nsfw"]);
 ```
 
+## Temporary soft demotion by hashtag
+
+When asked to **temporarily downrank** a hashtag (campaign spam that may have legitimate uses later), append `{ tag, until }` to `DOWNRANKED_HASHTAGS` in `lib/noteContent.js`. `until` is ISO 8601 UTC. Matching matches banned hashtags. Applied via `noteContentRankFactor` (×`RANK_DOWNRANKED_HASHTAG_FACTOR`, same as bad link hosts) so low-engagement notes fall under the engagement floor without a hard drop.
+
+```js
+// lib/noteContent.js
+export const DOWNRANKED_HASHTAGS = [
+  /* ... */,
+  { tag: "examplecampaign", until: "2026-10-10T01:30:00.000Z" },
+];
+```
+
 ## Do not
 
 - Add `BLOCKED_PUBKEYS` (or similar) in `identity.ts` — that file is for nip-05 / display names / lud16 only
