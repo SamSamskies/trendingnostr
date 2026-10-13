@@ -767,15 +767,18 @@ async function fetchTrendingFeedFromApi(
 }
 
 /**
- * Drop empties and re-apply the per-window cap after the shared server blob
- * (already ranked and spam-filtered).
+ * Drop empties / newly hidden authors and re-apply the per-window cap after
+ * the shared server blob (already ranked and spam-filtered at build time).
  */
 function applyClientFeedFilters(
   feed: TrendingFeed,
   hours: TrendingHours
 ): TrendingFeed {
-  // Also drop empties on the API path so stale CDN blobs clear immediately.
-  const visible = filterEmptyContentNotes(feed.notes);
+  // Re-check on the API path so stale CDN / Runtime Cache blobs clear
+  // immediately after a ban lands (hidden authors, empty/banned content).
+  const visible = filterEmptyContentNotes(feed.notes).filter(
+    (note) => !HIDDEN_AUTHOR_PUBKEYS.has(note.pubkey.toLowerCase())
+  );
 
   const limited = limitTrendingFeed(
     visible,

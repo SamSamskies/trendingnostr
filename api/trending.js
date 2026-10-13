@@ -15,6 +15,7 @@
  */
 
 import { getCache } from "@vercel/functions";
+import { HIDDEN_AUTHOR_PUBKEYS } from "../lib/hiddenAuthors.js";
 import { applyCors, originAllowed, requestOrigin } from "../lib/http.js";
 import {
   buildTrendingFeed,
@@ -88,6 +89,22 @@ function isFeedShape(value) {
   return Array.isArray(value.notes) && value.engagementById != null;
 }
 
+/** Drop authors banned after this blob was built (Runtime Cache can outlive a deploy). */
+function stripHiddenAuthors(feed) {
+  const notes = feed.notes.filter(
+    (note) =>
+      typeof note?.pubkey !== "string" ||
+      !HIDDEN_AUTHOR_PUBKEYS.has(note.pubkey.toLowerCase())
+  );
+  if (notes.length === feed.notes.length) return feed;
+  const keep = new Set(notes.map((note) => note.id));
+  const engagementById = {};
+  for (const [id, engagement] of Object.entries(feed.engagementById ?? {})) {
+    if (keep.has(id)) engagementById[id] = engagement;
+  }
+  return { ...feed, notes, engagementById };
+}
+
 /**
  * Stable content fingerprint for skip-unchanged writes.
  * Ignores updatedAt / durationMs so a no-op warm does not rewrite the blob.
@@ -121,7 +138,7 @@ async function getOrBuildFeed(hours, refresh) {
     const cached = await runtimeCache.get(key);
     if (isFeedShape(cached)) {
       if (!refresh) {
-        return { feed: cached, layer: "runtime" };
+        return { feed: stripHiddenAuthors(cached), layer: "runtime" };
       }
       previous = cached;
     }
