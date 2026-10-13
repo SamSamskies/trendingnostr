@@ -97,10 +97,10 @@ function stripHiddenAuthors(feed) {
       !HIDDEN_AUTHOR_PUBKEYS.has(note.pubkey.toLowerCase())
   );
   if (notes.length === feed.notes.length) return feed;
-  const keep = new Set(notes.map((note) => note.id));
+  const keep = new Set(notes.map((note) => note.id.toLowerCase()));
   const engagementById = {};
   for (const [id, engagement] of Object.entries(feed.engagementById ?? {})) {
-    if (keep.has(id)) engagementById[id] = engagement;
+    if (keep.has(id.toLowerCase())) engagementById[id] = engagement;
   }
   return { ...feed, notes, engagementById };
 }
