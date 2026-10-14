@@ -73,6 +73,23 @@ function visiblePageLength(eventCount: number, currentLength: number): number {
   return capped;
 }
 
+function isTypingTarget(target: EventTarget | null): boolean {
+  if (!(target instanceof HTMLElement)) return false;
+  if (target.isContentEditable) return true;
+  const tag = target.tagName;
+  return tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT";
+}
+
+/** First note whose bottom is still below the sticky header band (Twitter-style). */
+function indexNearViewport(noteEls: HTMLElement[]): number {
+  if (noteEls.length === 0) return -1;
+  const threshold = 72;
+  for (let i = 0; i < noteEls.length; i++) {
+    if (noteEls[i].getBoundingClientRect().bottom > threshold) return i;
+  }
+  return noteEls.length - 1;
+}
+
 function mergeProfiles(
   prev: Record<string, Kind0Profile>,
   found: Record<string, Kind0Profile>
@@ -337,9 +354,13 @@ export default function App() {
   const [askNote, setAskNote] = useState<LocatedEvent | null>(null);
   const [tipNote, setTipNote] = useState<LocatedEvent | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [selectedNoteId, setSelectedNoteId] = useState<string | null>(null);
   const askAiRef = useRef<AskAiPanelHandle>(null);
   const tipRef = useRef<TipDialogHandle>(null);
   const sentinelRef = useRef<HTMLDivElement>(null);
+  const resultsRef = useRef<HTMLOListElement>(null);
+  const selectedNoteIdRef = useRef<string | null>(null);
+  selectedNoteIdRef.current = selectedNoteId;
 
   useEffect(() => {
     let cancelled = false;
@@ -365,6 +386,7 @@ export default function App() {
         setEngagementById(feed.engagementById);
         setEvents(feed.notes);
         setCurrentDataLength(Math.min(WINDOW_PAGE_SIZE, feed.notes.length));
+        setSelectedNoteId(null);
         if (feed.notes.length === 0) {
           setError("No trending notes right now. Try again in a moment.");
         }
@@ -374,6 +396,7 @@ export default function App() {
         setEvents([]);
         setEngagementById({});
         setCurrentDataLength(0);
+        setSelectedNoteId(null);
         setError(
           err instanceof Error
             ? err.message
@@ -460,6 +483,79 @@ export default function App() {
       ),
     [displayEvents, currentDataLength]
   );
+
+  // Drop keyboard selection when the note leaves the filtered feed.
+  useEffect(() => {
+    if (!selectedNoteId) return;
+    if (displayEvents.some((note) => note.id === selectedNoteId)) return;
+    setSelectedNoteId(null);
+  }, [displayEvents, selectedNoteId]);
+
+  // j / k feed navigation (Twitter-style).
+  useEffect(() => {
+    if (loading || error || displayEvents.length === 0) return;
+
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.defaultPrevented) return;
+      if (event.metaKey || event.ctrlKey || event.altKey) return;
+      if (event.key !== "j" && event.key !== "k") return;
+      if (isTypingTarget(event.target)) return;
+      if (document.querySelector("dialog[open]")) return;
+
+      const noteEls = resultsRef.current
+        ? Array.from(
+            resultsRef.current.querySelectorAll<HTMLElement>("[data-note-id]")
+          )
+        : [];
+      if (noteEls.length === 0) return;
+
+      const ids = displayEvents.map((note) => note.id);
+      const currentId = selectedNoteIdRef.current;
+      let currentIndex = currentId ? ids.indexOf(currentId) : -1;
+      if (currentIndex < 0) {
+        const near = indexNearViewport(noteEls);
+        const nearId = near >= 0 ? noteEls[near].dataset.noteId : undefined;
+        currentIndex = nearId ? ids.indexOf(nearId) : 0;
+      }
+
+      let nextIndex =
+        event.key === "j" ? currentIndex + 1 : currentIndex - 1;
+      // First press with no prior selection: land on the in-view note.
+      if (currentId === null) {
+        nextIndex = currentIndex;
+      }
+      nextIndex = Math.max(0, Math.min(nextIndex, ids.length - 1));
+
+      const nextId = ids[nextIndex];
+      if (!nextId) return;
+
+      event.preventDefault();
+
+      // Grow the window if keyboard nav reaches past what's painted.
+      if (nextIndex >= visibleEvents.length) {
+        setCurrentDataLength((prev) =>
+          Math.min(
+            displayEvents.length,
+            Math.max(prev, nextIndex + 1, prev + WINDOW_PAGE_SIZE)
+          )
+        );
+      }
+
+      setSelectedNoteId(nextId);
+
+      // Scroll after paint so newly revealed notes exist in the DOM.
+      requestAnimationFrame(() => {
+        const el = resultsRef.current?.querySelector<HTMLElement>(
+          `[data-note-id="${CSS.escape(nextId)}"]`
+        );
+        el?.focus({ preventScroll: true });
+        el?.scrollIntoView({ block: "start", behavior: "smooth" });
+      });
+    };
+
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [loading, error, visibleEvents.length, displayEvents]);
 
   // Prefetch authors + mentions for the full feed so scrolled-in notes already
   // have names/avatars (cache paints instantly; relays fill gaps in the background).
@@ -611,7 +707,7 @@ export default function App() {
 
       {!loading && !error && visibleEvents.length > 0 ? (
         <>
-          <ol className="results">
+          <ol className="results" ref={resultsRef}>
             {visibleEvents.map((note) => {
               const engagement = engagementById[note.id.toLowerCase()];
               const authorProfile = profiles[note.pubkey.toLowerCase()];
@@ -627,16 +723,22 @@ export default function App() {
               };
               const asking = askNote?.id === note.id;
               const tipping = tipNote?.id === note.id;
+              const selected = selectedNoteId === note.id;
               return (
                 <li
                   key={note.id}
+                  data-note-id={note.id}
+                  tabIndex={-1}
+                  aria-current={selected ? "true" : undefined}
                   className={[
                     "note",
                     asking ? "note-asking" : "",
                     tipping ? "note-tipping" : "",
+                    selected ? "note-selected" : "",
                   ]
                     .filter(Boolean)
                     .join(" ")}
+                  onClick={() => setSelectedNoteId(note.id)}
                 >
                   <button
                     type="button"

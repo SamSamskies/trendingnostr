@@ -530,6 +530,19 @@ a.hero-action {
   border: 1px solid var(--line);
   border-radius: var(--radius);
   box-shadow: var(--shadow);
+  scroll-margin-top: 1rem;
+}
+
+.note:focus {
+  outline: none;
+}
+
+.note-selected {
+  border-color: rgba(180, 83, 9, 0.42);
+  box-shadow:
+    var(--shadow),
+    inset 3px 0 0 var(--accent),
+    0 0 0 1px rgba(180, 83, 9, 0.12);
 }
 
 .note-author {
