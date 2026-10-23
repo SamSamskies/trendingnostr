@@ -14,6 +14,12 @@ export type NostrClient = {
   profileUrl?: string;
   /** Hashtag explore URL; `{code}` is the tag without `#`. */
   hashtagUrl?: string;
+  /**
+   * iOS App Store product page. Used as the Open In href when `url` is a
+   * custom scheme (`nostur:`) so Safari never shows "address is invalid"
+   * if the app is not installed.
+   */
+  appStoreUrl?: string;
 };
 
 /** Keep nevents shareable; extra relays mostly bloat the bech32 string. */
@@ -35,10 +41,24 @@ export const NOSTR_CLIENTS: NostrClient[] = [
     platform: "native",
     url: "nostr:{code}",
   },
-  { id: "damus", name: "Damus", platform: "ios", url: "damus:{code}" },
-  { id: "nos", name: "Nos", platform: "ios", url: "nos:{code}" },
-  { id: "nostur", name: "Nostur", platform: "ios", url: "nostur:{code}" },
-  { id: "primal-ios", name: "Primal", platform: "ios", url: "primal:{code}" },
+  // HTTPS on iOS: Universal Links open the app when installed, otherwise a
+  // real webpage. Custom schemes (`damus:`, `nostur:`) make Safari show
+  // "address is invalid" when the app is missing — no App Store fallback.
+  { id: "damus", name: "Damus", platform: "ios", url: "https://damus.io/{code}" },
+  {
+    id: "nostur",
+    name: "Nostur",
+    platform: "ios",
+    url: "nostur:{code}",
+    appStoreUrl: "https://apps.apple.com/app/id1672780508",
+  },
+  {
+    id: "primal-ios",
+    name: "Primal",
+    platform: "ios",
+    url: "https://primal.net/e/{code}",
+    profileUrl: "https://primal.net/p/{code}",
+  },
   {
     id: "amethyst",
     name: "Amethyst",
@@ -164,6 +184,23 @@ export function clientHref(
   }
   const template = kind === "profile" ? (client.profileUrl ?? client.url) : client.url;
   return template.replaceAll("{code}", code);
+}
+
+/**
+ * href for an Open In row. Custom-scheme iOS apps with an App Store page
+ * link there instead, so a missing app opens the store rather than an
+ * invalid `nostur:` address.
+ */
+export function clientOpenHref(
+  client: NostrClient,
+  code: string,
+  kind: OpenInKind = "note"
+): string {
+  const href = clientHref(client, code, kind);
+  if (client.appStoreUrl && !isWebClientHref(href)) {
+    return client.appStoreUrl;
+  }
+  return href;
 }
 
 export function clientsForPlatform(
