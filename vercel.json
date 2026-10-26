@@ -1,5 +1,8 @@
 {
   "functions": {
+    "api/inference.js": {
+      "maxDuration": 60
+    },
     "api/trending.js": {
       "maxDuration": 60
     }
