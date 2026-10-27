@@ -16,12 +16,16 @@ import {
   INFERENCE_BRIDGE_HREF,
   isAbortError,
   prepareInference,
-  sameInferenceContent,
   setHostedConsent,
   type ChatStatus,
   type InferenceGate,
   type InferenceMessage,
 } from "./inference";
+import {
+  patchNoteContextHistory,
+  preferredResponseLanguage,
+  systemPrompt,
+} from "./ask-ai-context";
 import { useWebSearchEnabled } from "./settings";
 import { encodeNpub, type Kind0Profile } from "./identity";
 import { noteImageUrls } from "./media";
@@ -65,6 +69,7 @@ type VisibleMessage =
   | { id: string; role: "error"; content: string };
 
 type Thread = {
+  responseLanguage: string;
   history: InferenceMessage[];
   visible: VisibleMessage[];
   introStarted: boolean;
@@ -80,7 +85,12 @@ function nextId(): string {
 }
 
 function emptyThread(): Thread {
-  return { history: [], visible: [], introStarted: false };
+  return {
+    responseLanguage: preferredResponseLanguage(),
+    history: [],
+    visible: [],
+    introStarted: false,
+  };
 }
 
 function getThread(noteId: string): Thread {
@@ -93,6 +103,7 @@ function getThread(noteId: string): Thread {
 
 function snapshot(thread: Thread): Thread {
   return {
+    responseLanguage: thread.responseLanguage,
     history: [...thread.history],
     visible: [...thread.visible],
     introStarted: thread.introStarted,
@@ -160,31 +171,6 @@ function settlePendingThread(noteId: string): string | undefined {
   return undefined;
 }
 
-function systemPrompt(canSearch: boolean, hasImages: boolean): string {
-  return [
-    "You help someone read a public Nostr note from a trending feed.",
-    "The reader can already see the note. There are no replies in this app, so do not summarize the text back to them.",
-    hasImages
-      ? "The first user message includes the note's images before the text. Look at those images when they matter."
-      : null,
-    "On the first reply, explain and check:",
-    "- What is this referring to, and who or what is involved?",
-    canSearch
-      ? "- If it makes a claim or shares news, is that actually true? Search if you need to."
-      : "- If it makes a claim or shares news, is that actually true? Say so if you cannot verify it.",
-    "- If it is jargon, a meme, or an in-joke, explain it.",
-    "- If it asks a question, answer it.",
-    "- If it is a simple status or joke, say so in one line and stop.",
-    canSearch
-      ? "You can search the public web when that would help: checking a claim, identifying a person or project, current events, or facts that are not in the note. Do not search when the note itself is enough. If you searched, say so briefly."
-      : "You cannot search the web. Do not claim you searched. If a claim needs verification you cannot do, say so.",
-    "Keep answers short. Light markdown is fine: bold, short lists, and links. Do not use headings or code fences.",
-    "You are not the note's author. If you are unsure, say so. Invite a follow-up when it would help.",
-  ]
-    .filter((line): line is string => Boolean(line))
-    .join("\n");
-}
-
 function formatEngagement(stats?: NoteEngagement): string {
   if (!stats) return "unknown";
   return [
@@ -231,23 +217,6 @@ function noteContextUserContent(
     ...images.map((url): ContentPart => ({ type: "image", url })),
     { type: "text", text },
   ];
-}
-
-function patchNoteContextHistory(
-  history: InferenceMessage[],
-  content: string | ContentPart[],
-  canSearch: boolean
-): boolean {
-  const system = history[0];
-  const context = history[1];
-  if (system?.role !== "system" || context?.role !== "user") return false;
-  const nextSystem = systemPrompt(canSearch, Array.isArray(content));
-  const contentSame = sameInferenceContent(context.content, content);
-  const systemSame = system.content === nextSystem;
-  if (contentSame && systemSame) return false;
-  history[0] = { role: "system", content: nextSystem };
-  history[1] = { role: "user", content };
-  return true;
 }
 
 function SparkleIcon() {
@@ -450,11 +419,19 @@ export function AskAiPanel({
     const current = getThread(noteId);
     if (current.history.length === 0) {
       current.history = [
-        { role: "system", content: systemPrompt(canSearch, hasImages) },
+        {
+          role: "system",
+          content: systemPrompt(canSearch, hasImages, current.responseLanguage),
+        },
         { role: "user", content: contextContent },
       ];
     } else {
-      patchNoteContextHistory(current.history, contextContent, canSearch);
+      patchNoteContextHistory(
+        current.history,
+        contextContent,
+        canSearch,
+        current.responseLanguage
+      );
     }
 
     let userVisibleId: string | undefined;
@@ -619,7 +596,14 @@ export function AskAiPanel({
     const current = getThread(note.id);
     const canSearch = canSearchWeb();
     const nextContent = noteContextUserContent(note, authorName, engagement);
-    if (!patchNoteContextHistory(current.history, nextContent, canSearch)) return;
+    if (
+      !patchNoteContextHistory(
+        current.history,
+        nextContent,
+        canSearch,
+        current.responseLanguage
+      )
+    ) return;
 
     const restartingIntro =
       !current.visible.some((message) => message.role === "user") &&
