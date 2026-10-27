@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import test, { afterEach, beforeEach } from "node:test";
+import { systemPrompt } from "../src/ask-ai-context.ts";
 import handler, { imageFetchDns } from "../api/inference.js";
 
 const originalFetch = globalThis.fetch;
@@ -271,4 +272,23 @@ test("provider timeout returns a retryable error and releases the allowance", as
   }
   globalThis.fetch = async () => success();
   assert.equal((await call({ token })).statusCode, 200);
+});
+
+test("Gemini preserves response language instructions and explicit follow-up requests", async () => {
+  const languagePrompt = systemPrompt(false, false, "es-MX");
+  const conversation = [
+    { role: "system", content: languagePrompt },
+    { role: "user", content: "A trending Nostr note:\nNote: Hello Nostr!" },
+    { role: "assistant", content: "Es un saludo a la comunidad." },
+    { role: "user", content: "Reply in French: what is a relay?" },
+  ];
+  globalThis.fetch = async (_url, options) => {
+    const body = JSON.parse(options.body);
+    assert.equal(body.systemInstruction.parts[0].text, languagePrompt);
+    assert.equal(body.contents.at(-1).parts[0].text, "Reply in French: what is a relay?");
+    return success("Un relais transmet les événements.");
+  };
+  const response = await call({ body: { messages: conversation, webSearch: false } });
+  assert.equal(response.statusCode, 200);
+  assert.equal(response.body.content, "Un relais transmet les événements.");
 });

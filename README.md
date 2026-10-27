@@ -4,6 +4,8 @@ A simple read-only feed of trending Nostr notes.
 
 Each note has **Ask AI**. If an [Inference Provider API](https://github.com/SamSamskies/inference-provider-api) extension such as [Inference Bridge](https://chromewebstore.google.com/detail/inference-bridge/ekjldffogogadhfhgkibgkfdhhikfamd) is installed, the model runs in the extension (and can search the web when that helps). Otherwise the app can use a hosted fallback at `/api/inference` after you agree.
 
+Ask AI defaults to your browser’s preferred language. Follow-up questions use their own language, and explicit language requests take priority. The note’s language does not set the response language. This applies to both the extension and hosted inference paths.
+
 ## Installation
 
 ```sh
