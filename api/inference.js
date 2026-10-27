@@ -2,7 +2,7 @@
  * Hosted inference fallback. The public contract is generic so the provider
  * behind this file can change without renaming `/api/inference`.
  *
- * Current implementation: Gemini Developer API (Gemma 4 31B by default).
+ * Default: Ollama Cloud. Gemini remains selectable with INFERENCE_PROVIDER.
  * The key stays server-side. Local: `npx vercel dev` (loads `.env.local`).
  *
  * JavaScript (not TypeScript): `vercel dev` crashes compiling `.ts` API
@@ -10,34 +10,46 @@
  * 'startsWith')`.
  */
 
+import dns from "node:dns/promises";
+import { isIP } from "node:net";
 import { envInt, loadLocalEnvFallback, todayUtc } from "../lib/env.js";
+import { completeOllama } from "../lib/ollama.js";
+import { ollamaLimiter } from "../lib/ollama-limits.js";
 import {
   applyCors,
   INFERENCE_CLIENT_HEADER,
   originAllowed,
 } from "../lib/http.js";
 
-const DEFAULT_MODEL = "gemma-4-31b-it";
+const DEFAULT_MODELS = { ollama: "gemma4:cloud", gemini: "gemma-4-31b-it" };
 const MAX_BODY_BYTES = 100_000;
 const MAX_PROMPT_CHARS = 60_000;
+const REQUEST_TIMEOUT_MS = 50_000;
 const DEFAULT_CLIENT_DAILY = 50;
 
 const clientBuckets = new Map();
 
-loadLocalEnvFallback(["INFERENCE_", "GEMINI_"]);
+loadLocalEnvFallback(["INFERENCE_", "GEMINI_", "OLLAMA_"]);
+
+function providerId() {
+  return process.env.INFERENCE_PROVIDER?.trim().toLowerCase() || "ollama";
+}
 
 function apiKey() {
-  return (
-    process.env.INFERENCE_API_KEY?.trim() ||
-    process.env.GEMINI_API_KEY?.trim() ||
-    ""
-  );
+  if (providerId() === "gemini") {
+    return process.env.GEMINI_API_KEY?.trim() || process.env.INFERENCE_API_KEY?.trim() || "";
+  }
+  if (providerId() === "ollama") {
+    // INFERENCE_API_KEY is a legacy Gemini key; never send it to Ollama.
+    return process.env.OLLAMA_API_KEY?.trim() || "";
+  }
+  return "";
 }
 
 function fallbackEnabled() {
   const flag = (
     process.env.INFERENCE_FALLBACK_ENABLED ??
-    process.env.GEMINI_FALLBACK_ENABLED ??
+    (providerId() === "gemini" ? process.env.GEMINI_FALLBACK_ENABLED : undefined) ??
     ""
   )
     .trim()
@@ -47,17 +59,16 @@ function fallbackEnabled() {
 }
 
 function modelId() {
-  return (
-    process.env.INFERENCE_MODEL?.trim() ||
-    process.env.GEMINI_MODEL?.trim() ||
-    DEFAULT_MODEL
-  );
+  const provider = providerId();
+  return process.env[provider === "ollama" ? "OLLAMA_INFERENCE_MODEL" : "GEMINI_MODEL"]?.trim() ||
+    (process.env.INFERENCE_PROVIDER?.trim() ? process.env.INFERENCE_MODEL?.trim() : "") ||
+    DEFAULT_MODELS[provider];
 }
 
 function clientDailyLimit() {
   return envInt(
     "INFERENCE_CLIENT_DAILY_LIMIT",
-    envInt("GEMINI_CLIENT_DAILY_LIMIT", DEFAULT_CLIENT_DAILY)
+    providerId() === "gemini" ? envInt("GEMINI_CLIENT_DAILY_LIMIT", DEFAULT_CLIENT_DAILY) : DEFAULT_CLIENT_DAILY
   );
 }
 
@@ -218,6 +229,16 @@ function contentsHaveFileData(contents) {
   );
 }
 
+/**
+ * DNS lookup used before fetching note images. Tests replace `lookupAll` so
+ * they can simulate public vs private answers without a network.
+ */
+export const imageFetchDns = {
+  lookupAll(hostname) {
+    return dns.lookup(hostname, { all: true });
+  },
+};
+
 /** Block localhost, RFC1918, link-local, and cloud-metadata targets (SSRF). */
 function isPrivateOrLocalHostname(hostname) {
   const host = String(hostname || "")
@@ -258,7 +279,30 @@ function isPrivateOrLocalHostname(hostname) {
   return false;
 }
 
-function assertSafeImageFetchUrl(fileUri, base) {
+async function assertPublicResolvedAddresses(hostname) {
+  const host = String(hostname || "")
+    .toLowerCase()
+    .replace(/^\[|\]$/g, "");
+  if (isIP(host)) return;
+
+  let records;
+  try {
+    records = await imageFetchDns.lookupAll(host);
+  } catch {
+    throw new Error("image_fetch_url");
+  }
+  if (!Array.isArray(records) || records.length === 0) {
+    throw new Error("image_fetch_url");
+  }
+  for (const record of records) {
+    const address = record?.address;
+    if (!address || isPrivateOrLocalHostname(address)) {
+      throw new Error("image_fetch_url");
+    }
+  }
+}
+
+async function assertSafeImageFetchUrl(fileUri, base) {
   let parsed;
   try {
     parsed = base ? new URL(fileUri, base) : new URL(fileUri);
@@ -274,11 +318,13 @@ function assertSafeImageFetchUrl(fileUri, base) {
   if (isPrivateOrLocalHostname(parsed.hostname)) {
     throw new Error("image_fetch_url");
   }
+  // Literal IPs are covered above; names like 127.0.0.1.nip.io need DNS.
+  await assertPublicResolvedAddresses(parsed.hostname);
   return parsed;
 }
 
 async function fetchImageAsInlineData(fileUri, mimeType, signal) {
-  let current = assertSafeImageFetchUrl(fileUri);
+  let current = await assertSafeImageFetchUrl(fileUri);
   let res;
 
   for (let hop = 0; hop <= MAX_IMAGE_FETCH_REDIRECTS; hop++) {
@@ -298,7 +344,7 @@ async function fetchImageAsInlineData(fileUri, mimeType, signal) {
     const location = res.headers.get("location");
     if (!location) throw new Error("image_fetch_url");
     // Re-validate every hop so redirects cannot pivot into private/metadata nets.
-    current = assertSafeImageFetchUrl(location, current.href);
+    current = await assertSafeImageFetchUrl(location, current.href);
   }
 
   if (!res || (res.status >= 300 && res.status < 400)) {
@@ -401,6 +447,11 @@ export default async function handler(req, res) {
     return;
   }
 
+  if (!Object.hasOwn(DEFAULT_MODELS, providerId())) {
+    res.status(503).json({ error: "invalid_provider" });
+    return;
+  }
+
   if (req.method === "GET") {
     if (fallbackEnabled()) {
       res.status(200).json({ ok: true });
@@ -484,6 +535,42 @@ export default async function handler(req, res) {
     return;
   }
 
+  if (providerId() === "ollama") {
+    let finish;
+    const signal = AbortSignal.timeout(REQUEST_TIMEOUT_MS);
+    try {
+      finish = ollamaLimiter.begin(clientId);
+      const resolvedPrompt = {
+        ...prompt,
+        contents: contentsHaveFileData(prompt.contents)
+          ? await resolveImagesToInline(prompt.contents, signal)
+          : prompt.contents,
+      };
+      const result = await completeOllama({
+        prompt: resolvedPrompt,
+        model: modelId(),
+        key: apiKey(),
+        options,
+        webSearch: body.webSearch !== false,
+        signal,
+      });
+      res.status(200).json({
+        content: withSources(result.content, result.sources),
+        model: result.model,
+      });
+    } catch (error) {
+      releaseClient(clientId);
+      if (error?.retryAfter) res.setHeader("Retry-After", String(error.retryAfter));
+      const status = signal.aborted ? 503 : error?.status || 502;
+      res.status(status).json({
+        error: signal.aborted ? "provider_busy" : error?.status ? error.message : "provider_error",
+      });
+    } finally {
+      finish?.();
+    }
+    return;
+  }
+
   const key = apiKey();
   const model = modelId();
   const url = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent?key=${encodeURIComponent(key)}`;
@@ -515,10 +602,13 @@ export default async function handler(req, res) {
     geminiBody.generationConfig = generationConfig;
   }
 
+  // Bound image fetching, generation, and the capacity retry within Vercel's limit.
+  const requestSignal = AbortSignal.timeout(REQUEST_TIMEOUT_MS);
+
   // Hosted path: pull image bytes ourselves first. Relying on Gemini fileUri
   // fetch for Nostr CDNs often returns 503 / fetch failures.
   if (contentsHaveFileData(geminiBody.contents)) {
-    geminiBody.contents = await resolveImagesToInline(geminiBody.contents);
+    geminiBody.contents = await resolveImagesToInline(geminiBody.contents, requestSignal);
   }
 
   async function postGemini(body) {
@@ -526,6 +616,7 @@ export default async function handler(req, res) {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body),
+      signal: requestSignal,
     });
   }
 
@@ -534,6 +625,10 @@ export default async function handler(req, res) {
     geminiRes = await postGemini(geminiBody);
   } catch {
     releaseClient(clientId);
+    if (requestSignal.aborted) {
+      res.status(503).json({ error: "provider_busy" });
+      return;
+    }
     res.status(502).json({ error: "provider_error" });
     return;
   }

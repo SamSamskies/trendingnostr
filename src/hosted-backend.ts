@@ -14,7 +14,7 @@ const CONSENT_KEY = "trendingnostr.inferenceConsent";
 const CLIENT_TOKEN_KEY = "trendingnostr.inferenceClient";
 const SOFT_COUNT_KEY = "trendingnostr.inferenceSoftCount";
 
-/** Align with server default in api/inference.ts. */
+/** Align with server default in api/inference.js. */
 const CLIENT_SOFT_DAILY = 50;
 
 const HOSTED_FEATURES: InferenceFeatures = {
@@ -154,6 +154,18 @@ export function createHostedBackend(): InferenceBackend {
           if (errorCode === "provider_busy") {
             throw makeInferenceError("unavailable", "provider_busy");
           }
+          if (errorCode === "model_unavailable") {
+            throw makeInferenceError(
+              "provider_error",
+              "The configured hosted model is unavailable from the provider."
+            );
+          }
+          if (errorCode === "provider_auth") {
+            throw makeInferenceError(
+              "provider_error",
+              "The hosted provider rejected its API credentials."
+            );
+          }
           if (res.status === 429 || errorCode === "quota_exhausted") {
             throw makeInferenceError("unavailable", "quota_exhausted");
           }
@@ -173,7 +185,7 @@ export function createHostedBackend(): InferenceBackend {
             typeof (data as { http?: unknown }).http === "number"
               ? (data as { http: number }).http
               : null;
-          // Gemini high-demand / INTERNAL 5xx (ours may be 503 or wrapped 502).
+          // Provider overload or transient errors (ours may be 503 or wrapped 502).
           if (
             res.status === 503 ||
             res.status === 502 ||

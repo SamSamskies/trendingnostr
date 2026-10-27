@@ -94,7 +94,7 @@ export function canSearchWeb(): boolean {
     // Stable IPA advertises and runs web_search; experimental.request is not required.
     return Boolean(inferenceFeatures().webSearch);
   }
-  // Hosted Gemini/Gemma grounding uses Google Search when IPA is absent.
+  // The selected hosted provider supplies web search when IPA is absent.
   return true;
 }
 
