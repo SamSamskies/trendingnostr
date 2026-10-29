@@ -26,7 +26,7 @@ import {
   preferredResponseLanguage,
   systemPrompt,
 } from "./ask-ai-context";
-import { useWebSearchEnabled } from "./settings";
+import { setWebSearchEnabled, useWebSearchEnabled } from "./settings";
 import { encodeNpub, type Kind0Profile } from "./identity";
 import { noteImageUrls } from "./media";
 import { profileLabel } from "./mentions";
@@ -704,6 +704,14 @@ export function AskAiPanel({
           </button>
         </header>
 
+        <label className="ask-ai-web-search">
+          <input
+            type="checkbox"
+            checked={webSearchEnabled}
+            onChange={(event) => setWebSearchEnabled(event.target.checked)}
+          />
+          <span>Search the web when helpful</span>
+        </label>
         <div ref={logRef} className="ask-ai-log" aria-live="polite">
           {gate === "checking" ? (
             <div className="ask-ai-msg assistant pending">

@@ -147,7 +147,7 @@ export function describeInferenceError(error: unknown): string {
       return `This browser has used today's hosted inference allowance. ${BRIDGE_HINT}`;
     }
     if (/search_quota/i.test(message)) {
-      return `Hosted web search is out of quota. Turn off "Web search for Ask AI" in Settings and try again. ${BRIDGE_HINT}`;
+      return `Hosted web search is out of quota. Turn off web search and try again. ${BRIDGE_HINT}`;
     }
     if (/provider_busy/i.test(message)) {
       return `The hosted model is busy right now. Try again in a moment. ${BRIDGE_HINT}`;
