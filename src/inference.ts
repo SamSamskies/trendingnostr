@@ -13,9 +13,10 @@ import {
   hasHostedConsent,
   HOSTED_BACKEND_ID,
   setHostedConsent,
-} from "./hosted-backend";
-import { withOpaqueProviderHint } from "./inference-errors";
-import { isIncludeImagesEnabled, isWebSearchEnabled } from "./settings";
+} from "./hosted-backend.ts";
+import { SYSTEM_PROMPT_IMAGES_LINE } from "./ask-ai-context.ts";
+import { withOpaqueProviderHint } from "./inference-errors.ts";
+import { isIncludeImagesEnabled, isWebSearchEnabled } from "./settings.ts";
 
 export type InferenceMessage =
   | { role: "system"; content: string }
@@ -89,8 +90,20 @@ function inferenceFeatures() {
   }
 }
 
-export function canSearchWeb(): boolean {
+function usesHostedImageFallback(hasImages: boolean): boolean {
+  return (
+    hasImages &&
+    isInferenceAvailable() &&
+    !Boolean(inferenceFeatures().imageInput) &&
+    hasHostedConsent()
+  );
+}
+
+export function canSearchWeb(hasImages = false): boolean {
   if (!isWebSearchEnabled()) return false;
+  // Text-only IPA still uses hosted for vision when consented, and that
+  // path can search even if the extension itself cannot.
+  if (usesHostedImageFallback(hasImages)) return true;
   if (isInferenceAvailable()) {
     // Stable IPA advertises and runs web_search; experimental.request is not required.
     return Boolean(inferenceFeatures().webSearch);
@@ -303,11 +316,6 @@ export async function completeChat(options: {
   onDelta?: (text: string) => void;
 }): Promise<ChatResult> {
   const messages = options.messages as Message[];
-  const wantSearch = canSearchWeb();
-  const tools = wantSearch ? [WEB_SEARCH_TOOL] : undefined;
-  const features = inferenceFeatures();
-  const ipaSupportsImages =
-    isInferenceAvailable() && Boolean(features.imageInput);
   const includeImages = isIncludeImagesEnabled();
 
   let requestMessages = messages;
@@ -315,6 +323,11 @@ export async function completeChat(options: {
     requestMessages = stripImageParts(messages);
   }
   const hasImages = messagesHaveImageParts(requestMessages);
+  const wantSearch = canSearchWeb(hasImages);
+  const tools = wantSearch ? [WEB_SEARCH_TOOL] : undefined;
+  const features = inferenceFeatures();
+  const ipaSupportsImages =
+    isInferenceAvailable() && Boolean(features.imageInput);
 
   const payload: InferenceRequest = {
     method: "chat",
@@ -324,11 +337,13 @@ export async function completeChat(options: {
   };
 
   // IPA without imageInput rejects ImageParts. Prefer hosted when consented;
-  // otherwise strip images so text chat still works (URLs remain in note text).
+  // otherwise send text only: keep image URLs in the user text (including
+  // imeta-only URLs) and drop the vision system-prompt line so instructions
+  // match the payload.
+  if (usesHostedImageFallback(hasImages)) {
+    return hostedOnlyRequest(payload, options.onStatus, options.onDelta);
+  }
   if (hasImages && isInferenceAvailable() && !ipaSupportsImages) {
-    if (hasHostedConsent()) {
-      return hostedOnlyRequest(payload, options.onStatus, options.onDelta);
-    }
     requestMessages = stripImageParts(requestMessages);
   } else if (hasImages && ipaSupportsImages) {
     requestMessages = withIpaProxiedImageUrls(requestMessages);
@@ -349,15 +364,36 @@ export async function completeChat(options: {
 
 function stripImageParts(messages: Message[]): Message[] {
   return messages.map((message) => {
+    if (message.role === "system" && typeof message.content === "string") {
+      if (!message.content.includes(SYSTEM_PROMPT_IMAGES_LINE)) return message;
+      return {
+        ...message,
+        content: message.content
+          .split("\n")
+          .filter((line) => line !== SYSTEM_PROMPT_IMAGES_LINE)
+          .join("\n"),
+      };
+    }
     if (message.role !== "user" && message.role !== "assistant") return message;
     if (!Array.isArray(message.content)) return message;
-    const text = message.content
-      .filter(
-        (part): part is Extract<ContentPart, { type: "text" }> =>
-          part.type === "text"
-      )
-      .map((part) => part.text)
-      .join("\n\n");
+    const texts: string[] = [];
+    const imageUrls: string[] = [];
+    for (const part of message.content) {
+      if (part?.type === "text") texts.push(part.text);
+      if (
+        part?.type === "image" &&
+        "url" in part &&
+        typeof part.url === "string" &&
+        part.url
+      ) {
+        imageUrls.push(part.url);
+      }
+    }
+    let text = texts.join("\n\n");
+    const extraUrls = imageUrls.filter((url) => !text.includes(url));
+    if (extraUrls.length > 0) {
+      text = text ? `${text}\n\n${extraUrls.join("\n")}` : extraUrls.join("\n");
+    }
     if (message.role === "assistant") {
       return { ...message, content: text };
     }

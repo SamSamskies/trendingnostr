@@ -6,6 +6,7 @@ import {
   preferredResponseLanguage,
   systemPrompt,
 } from "../src/ask-ai-context.ts";
+import { noteImageUrls } from "../src/media.ts";
 
 const ISO_OFFSET = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}[+-]\d{2}:\d{2}$/;
 
@@ -116,6 +117,18 @@ test("updating author metadata or web search preserves language and follow-up hi
   assert.equal(patchNoteContextHistory(history, withImage, true, "es-ES", now), true);
   assert.equal(history[0].content, systemPrompt(true, true, "es-ES", now));
   assert.deepEqual(history.slice(2), followups);
+});
+
+test("note images dedupe the same Blossom blob across different hosts", () => {
+  const hash = "ab".repeat(32);
+  const inlineBlossom = `https://cdn.example/${hash}.png`;
+  const imetaBlossom = `https://blossom.example/${hash}`;
+  assert.deepEqual(
+    noteImageUrls(inlineBlossom, [
+      ["imeta", `url ${imetaBlossom}`, "m image/png"],
+    ]),
+    [inlineBlossom],
+  );
 });
 
 test("a newer clock refreshes the system prompt without looking like the note changed", () => {

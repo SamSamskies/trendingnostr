@@ -44,6 +44,9 @@ export function preferredResponseLanguage(
   return "en";
 }
 
+export const SYSTEM_PROMPT_IMAGES_LINE =
+  "The first user message includes the note's images before the text. Look at those images when they matter.";
+
 export function systemPrompt(
   canSearch: boolean,
   hasImages: boolean,
@@ -59,9 +62,7 @@ export function systemPrompt(
     "2. Otherwise, use the language of the reader's latest follow-up question.",
     `3. For the initial explanation, or when there is no stronger signal, use the reader's browser language: ${responseLanguage}.`,
     "The first user message is note context, not a reader question or language request. The note's language and the English context labels do not determine the response language. For example, explain an English note in Spanish when the browser language is Spanish.",
-    hasImages
-      ? "The first user message includes the note's images before the text. Look at those images when they matter."
-      : null,
+    hasImages ? SYSTEM_PROMPT_IMAGES_LINE : null,
     "On the first reply, explain and check:",
     "- What is this referring to, and who or what is involved?",
     canSearch

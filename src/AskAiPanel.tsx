@@ -75,6 +75,7 @@ type Thread = {
   history: InferenceMessage[];
   visible: VisibleMessage[];
   introStarted: boolean;
+  searchingWeb: boolean;
 };
 
 const threads = new Map<string, Thread>();
@@ -92,6 +93,7 @@ function emptyThread(): Thread {
     history: [],
     visible: [],
     introStarted: false,
+    searchingWeb: false,
   };
 }
 
@@ -109,6 +111,7 @@ function snapshot(thread: Thread): Thread {
     history: [...thread.history],
     visible: [...thread.visible],
     introStarted: thread.introStarted,
+    searchingWeb: thread.searchingWeb,
   };
 }
 
@@ -321,7 +324,12 @@ export function AskAiPanel({
   );
   const webSearchEnabled = useWebSearchEnabled();
   const includeImages = useIncludeImagesEnabled();
-  const maySearchWeb = canSearchWeb();
+  const contextHasImages = Array.isArray(
+    noteContextUserContent(note, authorName, engagement, includeImages)
+  );
+  const maySearchWeb = busy
+    ? thread.searchingWeb
+    : canSearchWeb(contextHasImages);
 
   function persist(noteId: string, next: Thread) {
     threads.set(noteId, next);
@@ -420,7 +428,6 @@ export function AskAiPanel({
     const controller = new AbortController();
     inflight.set(note.id, controller);
     const noteId = note.id;
-    const canSearch = canSearchWeb();
     const contextContent = noteContextUserContent(
       note,
       authorName,
@@ -428,8 +435,10 @@ export function AskAiPanel({
       includeImages
     );
     const hasImages = Array.isArray(contextContent);
+    const canSearch = canSearchWeb(hasImages);
 
     const current = getThread(noteId);
+    current.searchingWeb = canSearch;
     if (current.history.length === 0) {
       current.history = [
         {
@@ -607,13 +616,20 @@ export function AskAiPanel({
 
   useEffect(() => {
     const current = getThread(note.id);
-    const canSearch = canSearchWeb();
+    const restartingIntro = !current.visible.some(
+      (message) => message.role === "user"
+    );
+    // Follow-ups already have replies from the previous mode. Leave that
+    // transcript alone; the next runTurn applies the new image/search context.
+    if (!restartingIntro) return;
+
     const nextContent = noteContextUserContent(
       note,
       authorName,
       engagement,
       includeImages
     );
+    const canSearch = canSearchWeb(Array.isArray(nextContent));
     if (
       !patchNoteContextHistory(
         current.history,
@@ -621,28 +637,15 @@ export function AskAiPanel({
         canSearch,
         current.responseLanguage
       )
-    ) return;
+    )
+      return;
 
-    const restartingIntro =
-      !current.visible.some((message) => message.role === "user") &&
-      current.visible.some(
-        (message) =>
-          message.role === "assistant" && message.pending && !message.content
-      );
-    if (restartingIntro) {
-      current.visible = current.visible.filter(
-        (message) =>
-          !(
-            message.role === "assistant" &&
-            message.pending &&
-            !message.content
-          )
-      );
-    }
+    abortTurn(note.id);
+    current.history = [];
+    current.visible = [];
+    current.introStarted = true;
     persist(note.id, current);
-    if (restartingIntro) {
-      void runTurnRef.current(null);
-    }
+    void runTurnRef.current(null);
   }, [note, authorName, engagement, webSearchEnabled, includeImages]);
 
   function handleSubmit(event: FormEvent) {
