@@ -14,6 +14,7 @@ import {
   HOSTED_BACKEND_ID,
   setHostedConsent,
 } from "./hosted-backend";
+import { withOpaqueProviderHint } from "./inference-errors";
 import { isWebSearchEnabled } from "./settings";
 
 export type InferenceMessage =
@@ -172,7 +173,10 @@ export function describeInferenceError(error: unknown): string {
     if (/Hosted inference failed|empty hosted inference response/i.test(message)) {
       return `The hosted model hit an error. Try again in a moment. ${BRIDGE_HINT}`;
     }
-    return message || `The inference provider failed. ${BRIDGE_HINT}`;
+    return (
+      withOpaqueProviderHint(message) ||
+      `The inference provider failed. ${BRIDGE_HINT}`
+    );
   }
   if (message) return message;
   return "Inference failed.";
