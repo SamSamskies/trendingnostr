@@ -22,6 +22,7 @@ import {
   type InferenceMessage,
 } from "./inference";
 import {
+  formatPromptDateTime,
   patchNoteContextHistory,
   preferredResponseLanguage,
   systemPrompt,
@@ -36,11 +37,7 @@ import { encodeNpub, type Kind0Profile } from "./identity";
 import { noteImageUrls } from "./media";
 import { profileLabel } from "./mentions";
 import { AskAiMarkdown } from "./AskAiMarkdown";
-import {
-  formatCreateAtDate,
-  type LocatedEvent,
-  type NoteEngagement,
-} from "./nostr";
+import { type LocatedEvent, type NoteEngagement } from "./nostr";
 
 const MAX_NOTE_CHARS = 8000;
 
@@ -201,7 +198,7 @@ function buildNoteContext(
   return [
     "A trending Nostr note:",
     `Author: ${authorName}${npub ? ` (${npub})` : ""}`,
-    `Posted: ${formatCreateAtDate(note.created_at)}`,
+    `Posted: ${formatPromptDateTime(new Date(note.created_at * 1000))}`,
     `Engagement: ${formatEngagement(stats)}`,
     "",
     "Note:",

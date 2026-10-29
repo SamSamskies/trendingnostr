@@ -1,6 +1,33 @@
 import type { ContentPart } from "ipa-tools";
 import type { InferenceMessage } from "./inference";
 
+const CURRENT_TIME_LINE = /^The current date and time is .+$/m;
+
+function pad2(value: number): string {
+  return String(value).padStart(2, "0");
+}
+
+/** Local civil time with numeric offset, e.g. 2026-10-29T08:00:00-05:00. */
+export function formatPromptDateTime(
+  date: Date,
+  precision: "minute" | "second" = "second"
+): string {
+  const year = date.getFullYear();
+  const month = pad2(date.getMonth() + 1);
+  const day = pad2(date.getDate());
+  const hour = pad2(date.getHours());
+  const minute = pad2(date.getMinutes());
+  const second = precision === "minute" ? "00" : pad2(date.getSeconds());
+  const offsetMin = -date.getTimezoneOffset();
+  const sign = offsetMin >= 0 ? "+" : "-";
+  const abs = Math.abs(offsetMin);
+  return `${year}-${month}-${day}T${hour}:${minute}:${second}${sign}${pad2(Math.floor(abs / 60))}:${pad2(abs % 60)}`;
+}
+
+function promptWithoutClock(prompt: string): string {
+  return prompt.replace(CURRENT_TIME_LINE, "");
+}
+
 export function preferredResponseLanguage(
   browser: Partial<Pick<Navigator, "languages" | "language">> | undefined =
     typeof navigator === "undefined" ? undefined : navigator,
@@ -20,10 +47,12 @@ export function preferredResponseLanguage(
 export function systemPrompt(
   canSearch: boolean,
   hasImages: boolean,
-  responseLanguage = "en"
+  responseLanguage = "en",
+  now = new Date()
 ): string {
   return [
     "You help someone read a public Nostr note from a trending feed.",
+    `The current date and time is ${formatPromptDateTime(now, "minute")}.`,
     "The reader can already see the note. There are no replies in this app, so do not summarize the text back to them.",
     "Choose the response language in this priority order:",
     "1. Follow an explicit language request from the reader, including an earlier request that still applies (for example, 'reply in French').",
@@ -55,7 +84,8 @@ export function patchNoteContextHistory(
   history: InferenceMessage[],
   content: string | ContentPart[],
   canSearch: boolean,
-  responseLanguage = "en"
+  responseLanguage = "en",
+  now = new Date()
 ): boolean {
   const system = history[0];
   const context = history[1];
@@ -63,12 +93,14 @@ export function patchNoteContextHistory(
   const nextSystem = systemPrompt(
     canSearch,
     Array.isArray(content),
-    responseLanguage
+    responseLanguage,
+    now
   );
   const contentSame = JSON.stringify(context.content) === JSON.stringify(content);
-  const systemSame = system.content === nextSystem;
-  if (contentSame && systemSame) return false;
+  const systemSame =
+    promptWithoutClock(system.content) === promptWithoutClock(nextSystem);
   history[0] = { role: "system", content: nextSystem };
+  if (contentSame && systemSame) return false;
   history[1] = { role: "user", content };
   return true;
 }
