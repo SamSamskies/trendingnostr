@@ -178,7 +178,7 @@ export function describeInferenceError(error: unknown): string {
       `The inference provider failed. ${BRIDGE_HINT}`
     );
   }
-  if (message) return message;
+  if (message) return withOpaqueProviderHint(message);
   return "Inference failed.";
 }
 
