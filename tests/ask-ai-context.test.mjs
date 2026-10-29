@@ -5,7 +5,9 @@ import {
   patchNoteContextHistory,
   preferredResponseLanguage,
   systemPrompt,
+  systemPromptChanged,
 } from "../src/ask-ai-context.ts";
+import { noteImageUrls } from "../src/media.ts";
 
 const ISO_OFFSET = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}[+-]\d{2}:\d{2}$/;
 
@@ -118,6 +120,18 @@ test("updating author metadata or web search preserves language and follow-up hi
   assert.deepEqual(history.slice(2), followups);
 });
 
+test("note images dedupe the same Blossom blob across different hosts", () => {
+  const hash = "ab".repeat(32);
+  const inlineBlossom = `https://cdn.example/${hash}.png`;
+  const imetaBlossom = `https://blossom.example/${hash}`;
+  assert.deepEqual(
+    noteImageUrls(inlineBlossom, [
+      ["imeta", `url ${imetaBlossom}`, "m image/png"],
+    ]),
+    [inlineBlossom],
+  );
+});
+
 test("a newer clock refreshes the system prompt without looking like the note changed", () => {
   const earlier = new Date("2026-10-29T13:02:00Z");
   const later = new Date("2026-10-29T14:15:00Z");
@@ -126,7 +140,38 @@ test("a newer clock refreshes the system prompt without looking like the note ch
     { role: "system", content: systemPrompt(true, false, "es-ES", earlier) },
     { role: "user", content: note },
   ];
+  const previousSystem = history[0].content;
   assert.equal(patchNoteContextHistory(history, note, true, "es-ES", later), false);
   assert.equal(history[0].content, systemPrompt(true, false, "es-ES", later));
   assert.equal(history[1].content, note);
+  assert.equal(systemPromptChanged(previousSystem, history[0].content), false);
+});
+
+test("engagement and author edits patch context without looking like a mode change", () => {
+  const now = new Date("2026-10-29T13:02:00Z");
+  const initial =
+    "A trending Nostr note:\nAuthor: Unknown\nEngagement: unknown\nNote: Hello!";
+  const updated =
+    "A trending Nostr note:\nAuthor: Alice\nEngagement: 3 replies, 0 sats, 1 reactions, 0 reposts\nNote: Hello!";
+  const history = [
+    { role: "system", content: systemPrompt(true, false, "es-ES", now) },
+    { role: "user", content: initial },
+    { role: "assistant", content: "A greeting." },
+  ];
+  const previousSystem = history[0].content;
+  assert.equal(patchNoteContextHistory(history, updated, true, "es-ES", now), true);
+  assert.equal(systemPromptChanged(previousSystem, history[0].content), false);
+  assert.equal(history[1].content, updated);
+
+  const withImage = [
+    { type: "image", url: "https://example.com/photo.png" },
+    { type: "text", text: updated },
+  ];
+  const beforeImages = history[0].content;
+  assert.equal(patchNoteContextHistory(history, withImage, true, "es-ES", now), true);
+  assert.equal(systemPromptChanged(beforeImages, history[0].content), true);
+
+  const beforeSearchOff = history[0].content;
+  assert.equal(patchNoteContextHistory(history, withImage, false, "es-ES", now), true);
+  assert.equal(systemPromptChanged(beforeSearchOff, history[0].content), true);
 });
