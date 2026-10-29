@@ -15,7 +15,7 @@ import {
   setHostedConsent,
 } from "./hosted-backend";
 import { withOpaqueProviderHint } from "./inference-errors";
-import { isWebSearchEnabled } from "./settings";
+import { isIncludeImagesEnabled, isWebSearchEnabled } from "./settings";
 
 export type InferenceMessage =
   | { role: "system"; content: string }
@@ -238,7 +238,7 @@ async function consumeChat(
   return { content: text, model };
 }
 
-function messagesHaveImageParts(messages: InferenceMessage[]): boolean {
+function messagesHaveImageParts(messages: Message[]): boolean {
   for (const message of messages) {
     if (message.role !== "user") continue;
     if (!Array.isArray(message.content)) continue;
@@ -303,30 +303,35 @@ export async function completeChat(options: {
   onDelta?: (text: string) => void;
 }): Promise<ChatResult> {
   const messages = options.messages as Message[];
-  const hasImages = messagesHaveImageParts(options.messages);
   const wantSearch = canSearchWeb();
   const tools = wantSearch ? [WEB_SEARCH_TOOL] : undefined;
   const features = inferenceFeatures();
   const ipaSupportsImages =
     isInferenceAvailable() && Boolean(features.imageInput);
+  const includeImages = isIncludeImagesEnabled();
+
+  let requestMessages = messages;
+  if (!includeImages && messagesHaveImageParts(messages)) {
+    requestMessages = stripImageParts(messages);
+  }
+  const hasImages = messagesHaveImageParts(requestMessages);
 
   const payload: InferenceRequest = {
     method: "chat",
-    messages,
+    messages: requestMessages,
     tools,
     signal: options.signal,
   };
 
   // IPA without imageInput rejects ImageParts. Prefer hosted when consented;
   // otherwise strip images so text chat still works (URLs remain in note text).
-  let requestMessages = messages;
   if (hasImages && isInferenceAvailable() && !ipaSupportsImages) {
     if (hasHostedConsent()) {
       return hostedOnlyRequest(payload, options.onStatus, options.onDelta);
     }
-    requestMessages = stripImageParts(messages);
+    requestMessages = stripImageParts(requestMessages);
   } else if (hasImages && ipaSupportsImages) {
-    requestMessages = withIpaProxiedImageUrls(messages);
+    requestMessages = withIpaProxiedImageUrls(requestMessages);
   }
 
   return consumeChat(

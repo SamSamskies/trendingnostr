@@ -2195,18 +2195,28 @@ a.open-in-link:focus-visible,
   background: var(--accent-soft);
 }
 
-.ask-ai-web-search {
+.ask-ai-options {
+  display: flex;
+  flex-direction: column;
+  border-bottom: 1px solid var(--line);
+}
+
+.ask-ai-option {
   display: flex;
   align-items: center;
   gap: 0.55rem;
-  padding: 0.85rem 1rem;
-  border-bottom: 1px solid var(--line);
+  padding: 0.65rem 1rem;
   font-size: 0.8rem;
   color: var(--muted);
   cursor: pointer;
 }
 
-.ask-ai-web-search input {
+.ask-ai-option + .ask-ai-option {
+  padding-top: 0.2rem;
+  padding-bottom: 0.75rem;
+}
+
+.ask-ai-option input {
   width: 1rem;
   height: 1rem;
   margin: 0;
