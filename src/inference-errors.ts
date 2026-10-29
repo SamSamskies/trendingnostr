@@ -2,6 +2,8 @@ const OPAQUE_PROVIDER_LOAD_HINT =
   "Retry in a moment or pick another model — busy or free-tier models often fail this way.";
 const OPAQUE_PROVIDER_TOOL_HINT =
   "The model's web search or other hosted tool failed — retry, pick another model, or turn off web search.";
+const OPAQUE_PROVIDER_NOT_FOUND_HINT =
+  "Retry in a moment or pick another model — cloud models often fail this way while the runner is still starting.";
 
 /** Opaque gateway wrappers; the useful reason is often missing. */
 export function withOpaqueProviderHint(message: string): string {
@@ -12,6 +14,9 @@ export function withOpaqueProviderHint(message: string): string {
   }
   if (key === "server tool request failed") {
     return `${trimmed}. ${OPAQUE_PROVIDER_TOOL_HINT}`;
+  }
+  if (key === "not found" || key === "model not found") {
+    return `${trimmed}. ${OPAQUE_PROVIDER_NOT_FOUND_HINT}`;
   }
   return message;
 }

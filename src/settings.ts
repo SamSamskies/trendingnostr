@@ -9,6 +9,8 @@ export type TrendingHours = (typeof TRENDING_HOURS_OPTIONS)[number];
 export type AppSettings = {
   /** When false, Ask AI skips web search (IPA tools and hosted grounding). */
   webSearch: boolean;
+  /** When false, Ask AI sends note image URLs as text instead of vision parts. */
+  includeImages: boolean;
   /** Last selected trending window; restored on next visit. */
   trendingHours: TrendingHours;
   /** Lowercase hex pubkeys hidden from the feed. */
@@ -17,6 +19,7 @@ export type AppSettings = {
 
 const DEFAULT_SETTINGS: AppSettings = {
   webSearch: true,
+  includeImages: true,
   trendingHours: 48,
   mutedAuthors: [],
 };
@@ -60,6 +63,10 @@ function normalize(raw: unknown): AppSettings {
       typeof record.webSearch === "boolean"
         ? record.webSearch
         : DEFAULT_SETTINGS.webSearch,
+    includeImages:
+      typeof record.includeImages === "boolean"
+        ? record.includeImages
+        : DEFAULT_SETTINGS.includeImages,
     trendingHours: isTrendingHours(record.trendingHours)
       ? record.trendingHours
       : DEFAULT_SETTINGS.trendingHours,
@@ -121,6 +128,24 @@ export function useWebSearchEnabled(): boolean {
     subscribe,
     isWebSearchEnabled,
     () => DEFAULT_SETTINGS.webSearch
+  );
+}
+
+export function isIncludeImagesEnabled(): boolean {
+  return readSettings().includeImages;
+}
+
+export function setIncludeImagesEnabled(enabled: boolean): void {
+  const current = readSettings();
+  if (current.includeImages === enabled) return;
+  writeSettings({ ...current, includeImages: enabled });
+}
+
+export function useIncludeImagesEnabled(): boolean {
+  return useSyncExternalStore(
+    subscribe,
+    isIncludeImagesEnabled,
+    () => DEFAULT_SETTINGS.includeImages
   );
 }
 

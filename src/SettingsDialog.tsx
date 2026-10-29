@@ -2,12 +2,7 @@ import { useEffect, useId, useRef } from "react";
 import { Avatar } from "./Avatar";
 import type { Kind0Profile } from "./identity";
 import { profileLabel } from "./mentions";
-import {
-  setWebSearchEnabled,
-  unmuteAuthor,
-  useMutedAuthors,
-  useWebSearchEnabled,
-} from "./settings";
+import { unmuteAuthor, useMutedAuthors } from "./settings";
 
 const DRAWER_CLOSE_MS = 360;
 
@@ -26,9 +21,7 @@ export function SettingsDialog({
   const startCloseRef = useRef<() => void>(() => {});
   const closeTimerRef = useRef(0);
   const titleId = useId();
-  const webSearchId = useId();
   const mutedTitleId = useId();
-  const webSearch = useWebSearchEnabled();
   const mutedAuthors = useMutedAuthors();
   const onCloseRef = useRef(onClose);
   onCloseRef.current = onClose;
@@ -124,22 +117,6 @@ export function SettingsDialog({
         </header>
 
         <div className="settings-body">
-          <label className="settings-row" htmlFor={webSearchId}>
-            <span className="settings-row-text">
-              <span className="settings-row-label">Web search for Ask AI</span>
-              <span className="settings-row-hint">
-                When off, the model will not search the web. This can lower
-                hosted inference cost.
-              </span>
-            </span>
-            <input
-              id={webSearchId}
-              className="settings-toggle"
-              type="checkbox"
-              checked={webSearch}
-              onChange={(event) => setWebSearchEnabled(event.target.checked)}
-            />
-          </label>
           <section className="settings-section" aria-labelledby={mutedTitleId}>
             <h3 id={mutedTitleId} className="settings-section-title">
               Muted authors

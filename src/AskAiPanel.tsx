@@ -26,7 +26,12 @@ import {
   preferredResponseLanguage,
   systemPrompt,
 } from "./ask-ai-context";
-import { useWebSearchEnabled } from "./settings";
+import {
+  setIncludeImagesEnabled,
+  setWebSearchEnabled,
+  useIncludeImagesEnabled,
+  useWebSearchEnabled,
+} from "./settings";
 import { encodeNpub, type Kind0Profile } from "./identity";
 import { noteImageUrls } from "./media";
 import { profileLabel } from "./mentions";
@@ -207,11 +212,16 @@ function buildNoteContext(
 function noteContextUserContent(
   note: LocatedEvent,
   authorName: string,
-  stats?: NoteEngagement
+  stats: NoteEngagement | undefined,
+  includeImages: boolean
 ): string | ContentPart[] {
   const text = buildNoteContext(note, authorName, stats);
   const images = noteImageUrls(note.content, note.tags);
   if (images.length === 0) return text;
+  if (!includeImages) {
+    const extraUrls = images.filter((url) => !text.includes(url));
+    return extraUrls.length > 0 ? `${text}\n\n${extraUrls.join("\n")}` : text;
+  }
   // Images first, then the existing note-context text (IPA / hosted vision).
   return [
     ...images.map((url): ContentPart => ({ type: "image", url })),
@@ -313,6 +323,7 @@ export function AskAiPanel({
     (message) => message.role === "assistant" && message.pending
   );
   const webSearchEnabled = useWebSearchEnabled();
+  const includeImages = useIncludeImagesEnabled();
   const maySearchWeb = canSearchWeb();
 
   function persist(noteId: string, next: Thread) {
@@ -413,7 +424,12 @@ export function AskAiPanel({
     inflight.set(note.id, controller);
     const noteId = note.id;
     const canSearch = canSearchWeb();
-    const contextContent = noteContextUserContent(note, authorName, engagement);
+    const contextContent = noteContextUserContent(
+      note,
+      authorName,
+      engagement,
+      includeImages
+    );
     const hasImages = Array.isArray(contextContent);
 
     const current = getThread(noteId);
@@ -595,7 +611,12 @@ export function AskAiPanel({
   useEffect(() => {
     const current = getThread(note.id);
     const canSearch = canSearchWeb();
-    const nextContent = noteContextUserContent(note, authorName, engagement);
+    const nextContent = noteContextUserContent(
+      note,
+      authorName,
+      engagement,
+      includeImages
+    );
     if (
       !patchNoteContextHistory(
         current.history,
@@ -625,7 +646,7 @@ export function AskAiPanel({
     if (restartingIntro) {
       void runTurnRef.current(null);
     }
-  }, [note, authorName, engagement, webSearchEnabled]);
+  }, [note, authorName, engagement, webSearchEnabled, includeImages]);
 
   function handleSubmit(event: FormEvent) {
     event.preventDefault();
@@ -704,6 +725,26 @@ export function AskAiPanel({
           </button>
         </header>
 
+        <div className="ask-ai-options">
+          <label className="ask-ai-option">
+            <input
+              type="checkbox"
+              checked={webSearchEnabled}
+              onChange={(event) => setWebSearchEnabled(event.target.checked)}
+            />
+            <span>Search the web when helpful</span>
+          </label>
+          <label className="ask-ai-option">
+            <input
+              type="checkbox"
+              checked={includeImages}
+              onChange={(event) =>
+                setIncludeImagesEnabled(event.target.checked)
+              }
+            />
+            <span>Include note images</span>
+          </label>
+        </div>
         <div ref={logRef} className="ask-ai-log" aria-live="polite">
           {gate === "checking" ? (
             <div className="ask-ai-msg assistant pending">
