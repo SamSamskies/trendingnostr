@@ -28,6 +28,15 @@ function promptWithoutClock(prompt: string): string {
   return prompt.replace(CURRENT_TIME_LINE, "");
 }
 
+/** True when search/image instructions differ; the clock line is ignored. */
+export function systemPromptChanged(
+  previous: string | undefined,
+  next: string | undefined
+): boolean {
+  if (!previous || !next) return false;
+  return promptWithoutClock(previous) !== promptWithoutClock(next);
+}
+
 export function preferredResponseLanguage(
   browser: Partial<Pick<Navigator, "languages" | "language">> | undefined =
     typeof navigator === "undefined" ? undefined : navigator,

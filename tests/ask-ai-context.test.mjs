@@ -5,6 +5,7 @@ import {
   patchNoteContextHistory,
   preferredResponseLanguage,
   systemPrompt,
+  systemPromptChanged,
 } from "../src/ask-ai-context.ts";
 import { noteImageUrls } from "../src/media.ts";
 
@@ -139,7 +140,38 @@ test("a newer clock refreshes the system prompt without looking like the note ch
     { role: "system", content: systemPrompt(true, false, "es-ES", earlier) },
     { role: "user", content: note },
   ];
+  const previousSystem = history[0].content;
   assert.equal(patchNoteContextHistory(history, note, true, "es-ES", later), false);
   assert.equal(history[0].content, systemPrompt(true, false, "es-ES", later));
   assert.equal(history[1].content, note);
+  assert.equal(systemPromptChanged(previousSystem, history[0].content), false);
+});
+
+test("engagement and author edits patch context without looking like a mode change", () => {
+  const now = new Date("2026-10-29T13:02:00Z");
+  const initial =
+    "A trending Nostr note:\nAuthor: Unknown\nEngagement: unknown\nNote: Hello!";
+  const updated =
+    "A trending Nostr note:\nAuthor: Alice\nEngagement: 3 replies, 0 sats, 1 reactions, 0 reposts\nNote: Hello!";
+  const history = [
+    { role: "system", content: systemPrompt(true, false, "es-ES", now) },
+    { role: "user", content: initial },
+    { role: "assistant", content: "A greeting." },
+  ];
+  const previousSystem = history[0].content;
+  assert.equal(patchNoteContextHistory(history, updated, true, "es-ES", now), true);
+  assert.equal(systemPromptChanged(previousSystem, history[0].content), false);
+  assert.equal(history[1].content, updated);
+
+  const withImage = [
+    { type: "image", url: "https://example.com/photo.png" },
+    { type: "text", text: updated },
+  ];
+  const beforeImages = history[0].content;
+  assert.equal(patchNoteContextHistory(history, withImage, true, "es-ES", now), true);
+  assert.equal(systemPromptChanged(beforeImages, history[0].content), true);
+
+  const beforeSearchOff = history[0].content;
+  assert.equal(patchNoteContextHistory(history, withImage, false, "es-ES", now), true);
+  assert.equal(systemPromptChanged(beforeSearchOff, history[0].content), true);
 });
