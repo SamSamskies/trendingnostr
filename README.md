@@ -15,78 +15,73 @@ npm start
 
 Open the local URL Vite prints (usually http://localhost:5173). Vite alone does not serve `/api`. Hosted Ask AI looks unavailable until you run the API locally or deploy.
 
-## Hosted inference (local)
+## Hosted inference
 
-1. Copy `.env.example` to `.env.local` and set `OLLAMA_API_KEY` for the default Ollama.com backup provider.
-2. Never prefix the key with `VITE_` (that would ship it to the browser).
-3. Run the Vite app and `/api/inference` together:
+`/api/inference` is an authenticated proxy to
+[ipa-inference-fallback-api](https://github.com/SamSamskies/ipa-inference-fallback-api).
+Production uses shared Replit with `google/gemma-4-26b-a4b-it`. Hosted requests
+require an explicit `SHARED_INFERENCE_PROVIDER`, `SHARED_INFERENCE_URL`,
+`SHARED_INFERENCE_APP_SECRET`, and the matching provider key. Missing or invalid
+configuration fails closed. The proxy supplies the app identity, provider,
+model, and credentials; browser selectors and credentials cannot override them.
+
+Copy `.env.example` to ignored `.env.local` for local development. Never prefix
+backend settings with `VITE_`. Run the app and its API together:
 
 ```sh
-npm ci
-npm run dev:vercel
+npm run dev:vercel -- --listen 3000
 ```
 
-`vercel dev` loads `.env.local`, serves `/api/inference`, and proxies the Vite app. Use the URL it prints (often http://localhost:3000, or :3001 if 3000 is busy)—plain `npm start` on :5173 does not serve `/api`.
+Use the URL Vercel prints. Plain `npm start` serves only the Vite app. To develop
+against a local shared API, run that service separately on port **3001**, set
+`SHARED_INFERENCE_URL=http://127.0.0.1:3001/api/inference`, and use a matching local
+app secret. HTTP upstream URLs are allowed only for localhost outside deployed
+Preview/Production environments. The backend env loader reads only active,
+explicitly allowed settings; `.vercelignore` excludes env files from uploads.
 
-Switch hosted providers with `INFERENCE_PROVIDER=ollama` (default) or `INFERENCE_PROVIDER=gemini`. Gemini uses `GEMINI_API_KEY`; the existing `INFERENCE_API_KEY` is still accepted for Gemini only and is never sent to Ollama. Both implementations remain available at `/api/inference`.
+Shared provider settings remain independent:
 
-Keep separate `OLLAMA_INFERENCE_MODEL` and `GEMINI_MODEL` settings so switching providers does not reuse the wrong model. Defaults are `gemma4:cloud` for Ollama and `gemma-4-31b-it` for Gemini. The Ollama alias maps to `gemma4:31b` for the [direct cloud API](https://docs.ollama.com/cloud). `INFERENCE_MODEL` remains a legacy override when `INFERENCE_PROVIDER` is explicitly set and that provider's model setting is absent.
+| `SHARED_INFERENCE_PROVIDER` | Backend key | Model setting (default) |
+| --- | --- | --- |
+| `replit` | `SHARED_INFERENCE_REPLIT_API_KEY` | `REPLIT_INFERENCE_MODEL` (`google/gemma-4-26b-a4b-it`) |
+| `ollama` | `SHARED_INFERENCE_OLLAMA_API_KEY` | `OLLAMA_INFERENCE_MODEL` (`gemma4:cloud`) |
+| `gemini` | `SHARED_INFERENCE_GEMINI_API_KEY` | `GEMINI_MODEL` (`gemma-4-31b-it`) |
 
-`OLLAMA_MODEL` configures the local `detect-spam` script only; hosted Ask AI ignores it.
+Replit text, vision, and search have passed live functional checks. Gemini
+text/vision can use shared routing with search off; Gemini search is rejected
+unless `SHARED_INFERENCE_GEMINI_SEARCH_ENABLED=true` is set after validating the
+selected model. `OLLAMA_HOST` and `OLLAMA_MODEL` configure local spam detection
+only and do not affect hosted Ask AI.
 
-Both providers support images, web search, temperature, and reasoning options. Ollama executes requested searches through its [web search API](https://docs.ollama.com/capabilities/web-search), with at most two searches and three chat calls per explanation. Image fetching and provider calls share a 50-second timeout. The browser's web search setting applies to both providers.
+IPA stays preferred. Hosted inference requires consent stored in
+`sessionStorage` for the tab. The existing client UUID, 50-success daily browser
+soft count, image/search toggles, follow-ups, reasoning options, and final
+non-streaming JSON responses are preserved. The shared service owns provider
+limits and per-app admission; its regional limits are not an exact global daily
+quota or spending cap.
 
-### Shared-service route and rollback
+The shared API validates messages, images, options, and model capabilities. The
+proxy forwards only the allowed top-level payload fields with its server-selected
+model and enforces a 100,000-byte UTF-8 request limit and a 180-second timeout,
+within the 200-second Vercel function duration. Disconnecting cancels the
+outbound request. Status/error JSON and `Retry-After` pass through without
+proxy retries or direct-provider fallback. Set `INFERENCE_FALLBACK_ENABLED=false`
+(or `0`/`off`) to disable hosted inference. Vercel backend setting changes take
+effect on a new deployment; this does not require a new browser contract.
 
-`SHARED_INFERENCE_ENABLED=true` selects an authenticated proxy to
-[ipa-inference-fallback-api](https://github.com/SamSamskies/ipa-inference-fallback-api).
-The default is the retained direct implementation. The browser continues calling
-`/api/inference`; IPA preference, tab consent, client identity, daily soft count,
-images, search controls, follow-ups, and non-streaming responses are unchanged.
+Check hosted inference with the smoke script:
 
-Set `SHARED_INFERENCE_URL`, `SHARED_INFERENCE_APP_SECRET`, and the selected
-provider's `SHARED_INFERENCE_OLLAMA_API_KEY`, `SHARED_INFERENCE_GEMINI_API_KEY`, or
-`SHARED_INFERENCE_REPLIT_API_KEY` in the backend environment.
-Use `SHARED_INFERENCE_PROVIDER=replit` and
-`REPLIT_INFERENCE_MODEL=google/gemma-4-26b-a4b-it` to select Replit independently
-of the direct route. Replit is shared-service only; its dedicated model setting
-does not use `INFERENCE_MODEL`. Keep `INFERENCE_PROVIDER=ollama` for direct rollback.
-Without a shared-provider override, the existing `INFERENCE_PROVIDER`,
-`OLLAMA_INFERENCE_MODEL`, `GEMINI_MODEL`, and legacy model precedence still apply.
-Shared routing never falls back to a direct-route credential. Browser-supplied
-credentials/provider/model selectors cannot override backend configuration.
+```sh
+npm run smoke:inference -- --url https://HOST/api/inference --provider replit --checks
+npm run smoke:inference -- --url https://HOST/api/inference --provider replit \
+  --image-url https://IMAGE_HOST/full-size-note.jpg --image-expect VISIBLE_SUBJECT \
+  --search --follow-up
+```
 
-For local development, run the shared API separately on port **3001**, set
-`SHARED_INFERENCE_URL=http://127.0.0.1:3001/api/inference`, use a matching local
-app secret, and run this app with `npm run dev:vercel -- --listen 3000`.
-The backend-only local loader includes `SHARED_INFERENCE_*`. Keep these settings
-in ignored `.env.local`; `.vercelignore` also excludes env files from uploads.
-
-The shared proxy has a 180-second timeout and a 200-second Vercel function limit,
-covering the service's 120-second default / 170-second maximum generation budget.
-Disconnecting cancels the outbound request. The proxy forwards status/error JSON
-and `Retry-After`, without retrying admission failures or switching routes on an
-error. The shared service owns provider limits and per-app admission (currently
-10 admitted POSTs/app/60 seconds within a region); this is not a global daily or
-spending cap. The per-process limits below describe the retained direct route.
-
-Ollama is the shared route's validated search provider. Gemini text/vision can
-use shared routing with search off; shared Gemini search rejects requests until
-`SHARED_INFERENCE_GEMINI_SEARCH_ENABLED=true` is set after live validation for the
-selected model. Replit must pass live text/vision/search checks in a protected
-preview before production rollout; registry metadata alone does not verify a model.
-
-Follow the [rollout and rollback runbook](docs/shared-inference-rollout.md) before
-switching public traffic: public-proxy IP controls and provider spending
-safeguards must be verified first. Set `SHARED_INFERENCE_ENABLED=false` and
-redeploy this app to return to the retained direct route. Keep its keys valid
-through the observation period; `OLLAMA_MODEL` and spam detection are independent.
-
-Ollama has additional limits: 5 explanation attempts per browser per minute, 20 upstream calls per minute (including failed attempts, searches, and chat continuations), and 2 concurrent explanations. HTTP 429 responses trigger a cooldown and preserve `Retry-After`. These limits are in memory **per server process**, so Vercel instances do not share them; they are best-effort protection, not an account-wide spending cap. Configure them with `OLLAMA_CLIENT_REQUESTS_PER_MINUTE`, `OLLAMA_REQUESTS_PER_MINUTE`, and `OLLAMA_MAX_CONCURRENT`.
-
-Other optional env (see `.env.example`): `INFERENCE_FALLBACK_ENABLED`, `INFERENCE_CLIENT_DAILY_LIMIT` (default 50 successful explanations per browser per day). Failed provider requests release the daily allowance, while Ollama's minute limits still count attempts.
-
-IPA stays preferred. Hosted inference only runs after IPA is unavailable and you agree. Consent is stored in `sessionStorage` for the tab session.
+The full-size image check requires an image over 1 MB and at most 4 MB, plus a
+visible subject or text to check in the answer. Each command makes one real
+generation; `--follow-up` adds another. For rollback, restore a known working
+shared-service deployment through Vercel's deployment history.
 
 ## Build
 
@@ -95,9 +90,9 @@ npm ci
 npm run build
 ```
 
-Static output lands in `dist/`. For Vercel: build command `npm run build`, output directory `dist`. Set `INFERENCE_PROVIDER` and the corresponding API key in the Vercel project env.
+Static output lands in `dist/`. For Vercel: build command `npm run build`, output directory `dist`. Set the shared-service backend settings above in the Vercel project env.
 
-The public endpoint is `/api/inference`. Provider selection is server-side; one provider handles each hosted request. Cross-provider failover or routing between both providers can be added later without changing the browser contract.
+The public endpoint is `/api/inference`. Provider selection is server-side; one provider handles each hosted request. The proxy does not retry with another provider on errors.
 
 ## Cached trending feed
 

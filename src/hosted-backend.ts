@@ -13,7 +13,7 @@ const CONSENT_KEY = "trendingnostr.inferenceConsent";
 const CLIENT_TOKEN_KEY = "trendingnostr.inferenceClient";
 const SOFT_COUNT_KEY = "trendingnostr.inferenceSoftCount";
 
-/** Align with server default in api/inference.js. */
+/** Browser soft allowance; the shared service enforces its own admission limits. */
 const CLIENT_SOFT_DAILY = 50;
 
 const HOSTED_FEATURES: InferenceFeatures = {
