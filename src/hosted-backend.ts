@@ -167,8 +167,14 @@ export function createHostedBackend(): InferenceBackend {
               "The hosted provider rejected its API credentials."
             );
           }
-          if (res.status === 429 || errorCode === "quota_exhausted") {
+          if (errorCode === "quota_exhausted") {
             throw makeInferenceError("unavailable", "quota_exhausted");
+          }
+          // Public-proxy WAF responses can be non-JSON. Treat an otherwise
+          // unclassified 429 as a temporary rate limit, preserving explicit
+          // daily-quota and client-limit errors above.
+          if (res.status === 429) {
+            throw makeInferenceError("unavailable", "rate_limited");
           }
           if (errorCode === "disabled" || errorCode === "missing_api_key") {
             throw makeInferenceError("unavailable", "Hosted inference disabled");

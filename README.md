@@ -36,6 +36,46 @@ Keep separate `OLLAMA_INFERENCE_MODEL` and `GEMINI_MODEL` settings so switching 
 
 Both providers support images, web search, temperature, and reasoning options. Ollama executes requested searches through its [web search API](https://docs.ollama.com/capabilities/web-search), with at most two searches and three chat calls per explanation. Image fetching and provider calls share a 50-second timeout. The browser's web search setting applies to both providers.
 
+### Shared-service route and rollback
+
+`SHARED_INFERENCE_ENABLED=true` selects an authenticated proxy to
+[ipa-inference-fallback-api](https://github.com/SamSamskies/ipa-inference-fallback-api).
+The default is the retained direct implementation. The browser continues calling
+`/api/inference`; IPA preference, tab consent, client identity, daily soft count,
+images, search controls, follow-ups, and non-streaming responses are unchanged.
+
+Set `SHARED_INFERENCE_URL`, `SHARED_INFERENCE_APP_SECRET`, and the selected
+provider's `SHARED_INFERENCE_OLLAMA_API_KEY` or `SHARED_INFERENCE_GEMINI_API_KEY`
+in the backend environment. The existing `INFERENCE_PROVIDER`,
+`OLLAMA_INFERENCE_MODEL`, `GEMINI_MODEL`, and legacy model precedence still apply.
+Shared routing never falls back to a direct-route credential. Browser-supplied
+credentials/provider/model selectors cannot override backend configuration.
+
+For local development, run the shared API separately on port **3001**, set
+`SHARED_INFERENCE_URL=http://127.0.0.1:3001/api/inference`, use a matching local
+app secret, and run this app with `npm run dev:vercel -- --listen 3000`.
+The backend-only local loader includes `SHARED_INFERENCE_*`. Keep these settings
+in ignored `.env.local`; `.vercelignore` also excludes env files from uploads.
+
+The shared proxy has a 180-second timeout and a 200-second Vercel function limit,
+covering the service's 120-second default / 170-second maximum generation budget.
+Disconnecting cancels the outbound request. The proxy forwards status/error JSON
+and `Retry-After`, without retrying admission failures or switching routes on an
+error. The shared service owns provider limits and per-app admission (currently
+10 admitted POSTs/app/60 seconds within a region); this is not a global daily or
+spending cap. The per-process limits below describe the retained direct route.
+
+Ollama is the shared route's validated search provider. Gemini text/vision can
+use shared routing with search off; shared Gemini search rejects requests until
+`SHARED_INFERENCE_GEMINI_SEARCH_ENABLED=true` is set after live validation for the
+selected model. Replit routing remains unavailable pending app-specific checks.
+
+Follow the [rollout and rollback runbook](docs/shared-inference-rollout.md) before
+switching public traffic: public-proxy IP controls and provider spending
+safeguards must be verified first. Set `SHARED_INFERENCE_ENABLED=false` and
+redeploy this app to return to the retained direct route. Keep its keys valid
+through the observation period; `OLLAMA_MODEL` and spam detection are independent.
+
 Ollama has additional limits: 5 explanation attempts per browser per minute, 20 upstream calls per minute (including failed attempts, searches, and chat continuations), and 2 concurrent explanations. HTTP 429 responses trigger a cooldown and preserve `Retry-After`. These limits are in memory **per server process**, so Vercel instances do not share them; they are best-effort protection, not an account-wide spending cap. Configure them with `OLLAMA_CLIENT_REQUESTS_PER_MINUTE`, `OLLAMA_REQUESTS_PER_MINUTE`, and `OLLAMA_MAX_CONCURRENT`.
 
 Other optional env (see `.env.example`): `INFERENCE_FALLBACK_ENABLED`, `INFERENCE_CLIENT_DAILY_LIMIT` (default 50 successful explanations per browser per day). Failed provider requests release the daily allowance, while Ollama's minute limits still count attempts.
