@@ -7,8 +7,10 @@ const { values } = parseArgs({ options: {
   vision: { type: "boolean", default: false },
   search: { type: "boolean", default: false },
   checks: { type: "boolean", default: false },
+  provider: { type: "string" },
 } });
-if (!values.url) throw new Error("Usage: npm run smoke:inference -- --url https://HOST/api/inference [--checks] [--vision] [--search]");
+if (!values.url) throw new Error("Usage: npm run smoke:inference -- --url https://HOST/api/inference [--provider replit] [--checks] [--vision] [--search]");
+if (values.provider && !["ollama", "gemini", "replit"].includes(values.provider)) throw new Error("Invalid expected provider");
 const endpoint = new URL(values.url);
 if (!["http:", "https:"].includes(endpoint.protocol) || endpoint.username || endpoint.password ||
     endpoint.search || endpoint.hash || endpoint.pathname !== "/api/inference") throw new Error("Invalid proxy URL");
@@ -52,9 +54,10 @@ if (values.checks) {
 // An inline image avoids external image hosts. It is a 64x64 red PNG.
 const image = { type: "image", mediaType: "image/png", data:
   "iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAIAAAAlC+aJAAAAb0lEQVR4nO3PAQkAAAyEwO9feoshgnABdLep8QUNyPEFDcjxBQ3I8QUNyPEFDcjxBQ3I8QUNyPEFDcjxBQ3I8QUNyPEFDcjxBQ3I8QUNyPEFDcjxBQ3I8QUNyPEFDcjxBQ3I8QUNyPEFDcjxBQ3IPanc8OLDQitxAAAAAElFTkSuQmCC" };
-const prompt = values.search
-  ? "Search the web for the official Nostr protocol repository. Include an HTTPS source link."
-  : values.vision ? "Describe the color in this image in one short sentence." : "Reply with the word ready.";
+const prompt = [
+  ...(values.vision ? ["Describe the color in this image in one short sentence."] : []),
+  ...(values.search ? ["Search the web for the official Nostr protocol repository. Include an HTTPS source link."] : []),
+].join(" ") || "Reply with the word ready.";
 const generated = await request("POST", {
   messages: [{ role: "user", content: values.vision ? [image, { type: "text", text: prompt }] : prompt }],
   webSearch: values.search,
@@ -68,8 +71,10 @@ const generated = await request("POST", {
 assert.equal(generated.status, 200, "Generation failed; inspect sanitized status/error metadata in the deployment");
 assert.ok(typeof generated.data.content === "string" && generated.data.content.trim(), "Missing content");
 assert.ok(typeof generated.data.model === "string" && generated.data.model !== "forged-model", "Invalid backend model");
+if (values.provider) assert.equal(generated.data.provider, values.provider, "Unexpected backend provider");
 for (const forged of ["smoke-forged-auth", "smoke-forged-key", "smoke-forged-app"]) {
   assert.ok(!JSON.stringify(generated.data).includes(forged), "Forged credential echo");
 }
 if (values.search) assert.match(generated.data.content, /https:\/\//, "Search smoke requires an HTTPS citation");
-console.log(`PASS: generation, backend selectors, non-streaming JSON${values.vision ? ", image input (inspect provider evidence to confirm vision)" : ""}${values.search ? ", search citation (inspect provider usage to confirm search execution)" : ""}`);
+if (values.vision) assert.match(generated.data.content, /\bred\b/i, "Vision smoke requires the correct image color");
+console.log(`PASS: generation, backend selectors, non-streaming JSON${values.provider ? `, provider ${values.provider}` : ""}${values.vision ? ", image color" : ""}${values.search ? ", search citation (inspect provider usage to confirm search execution)" : ""}`);

@@ -29,8 +29,10 @@ does not read, print, modify, or rotate those staged secrets.
    protected preview; preserve existing deployment protection.
 2. Scope `SHARED_INFERENCE_ENABLED=true` to the test preview. Set the staged
    shared URL, matching app secret, and selected provider's shared key. Keep
-   `INFERENCE_PROVIDER=ollama` and `OLLAMA_INFERENCE_MODEL=gemma4:cloud` for the
-   initial rollout. Never paste secrets into a PR, log, command argument, or
+   `INFERENCE_PROVIDER=ollama` and `OLLAMA_INFERENCE_MODEL=gemma4:cloud` for direct
+   rollback. To test Replit, set `SHARED_INFERENCE_PROVIDER=replit` and
+   `REPLIT_INFERENCE_MODEL=google/gemma-4-26b-a4b-it`; the proxy uses only
+   `SHARED_INFERENCE_REPLIT_API_KEY`. Never paste secrets into a PR, log, command argument, or
    browser variable. The proxy fixes `X-Inference-App: trendingnostr`, injects
    bearer/provider credentials and model, and sends one provider selector.
 3. GET `/api/inference`: expect shared availability JSON. POST a small text
@@ -70,9 +72,9 @@ The smoke command makes **one real generation per invocation** against the
 selected proxy and uses provider quota. It needs no app/provider credentials:
 
 ```sh
-npm run smoke:inference -- --url https://PREVIEW_HOST/api/inference --checks
-npm run smoke:inference -- --url https://PREVIEW_HOST/api/inference --vision
-npm run smoke:inference -- --url https://PREVIEW_HOST/api/inference --search
+npm run smoke:inference -- --url https://PREVIEW_HOST/api/inference --provider replit --checks
+npm run smoke:inference -- --url https://PREVIEW_HOST/api/inference --provider replit --vision
+npm run smoke:inference -- --url https://PREVIEW_HOST/api/inference --provider replit --search
 ```
 
 For a protected preview, set `VERCEL_AUTOMATION_BYPASS_SECRET` in the caller's
@@ -82,10 +84,40 @@ promotion. Inspect provider evidence for real vision/search execution; a JSON
 answer or a citation alone does not establish either capability.
 
 Gemini search requires separate live validation for the selected model before
-setting `SHARED_INFERENCE_GEMINI_SEARCH_ENABLED=true`. Replit is deliberately
-rejected by this app until a later change adds app-specific live validation and
-backend-owned model configuration. No optional public discovery/selector UI is
-included in this migration.
+setting `SHARED_INFERENCE_GEMINI_SEARCH_ENABLED=true`. Replit uses only the shared
+route and its dedicated backend model setting; no direct Replit implementation or
+legacy Replit model/key fallback is added. Confirm text, correct image color,
+search citations plus gateway usage evidence, follow-ups, and reasoning options
+for the selected Replit model before public rollout. The shared registry's model
+`google/gemma-4-26b-a4b-it` is the starting default, not proof of live access or
+feature support. No optional public discovery/selector UI is included.
+
+### Replit environment recipe
+
+Set these in the **TrendingNostr** backend, first scoped to the test preview:
+
+```dotenv
+SHARED_INFERENCE_ENABLED=true
+SHARED_INFERENCE_PROVIDER=replit
+REPLIT_INFERENCE_MODEL=google/gemma-4-26b-a4b-it
+SHARED_INFERENCE_URL=https://ipa-inference-fallback-api.vercel.app/api/inference
+SHARED_INFERENCE_APP_SECRET=<existing staged TrendingNostr app secret>
+SHARED_INFERENCE_REPLIT_API_KEY=<existing staged gateway key>
+INFERENCE_FALLBACK_ENABLED=true
+INFERENCE_PROVIDER=ollama
+```
+
+Use the already staged sensitive secret/key values; do not replace them with
+the literal placeholders above. Keep the existing `OLLAMA_API_KEY` and model
+settings for direct rollback. The shared service already allows Replit for
+TrendingNostr and needs no provider/model/key configuration for this selection.
+An optional `REPLIT_MAX_TOKENS` belongs to the shared-service project and applies
+service-wide; it is not a TrendingNostr model or credential setting.
+
+After the checks and activation authorization, use the same selection in
+Production and redeploy. Environment changes apply to new deployments. To return
+to direct Ollama, set only `SHARED_INFERENCE_ENABLED=false` and redeploy; the
+shared-provider/model settings are ignored by the direct route.
 
 ## Public proxy and spending controls before promotion
 
@@ -135,15 +167,20 @@ spam detection and other consumers before revocation.
 
 Automated coverage includes trusted injection, forged selectors/headers,
 backend defaults/precedence, GET auth, methods/origins, UTF-8 incoming/outgoing
-body limits, image/follow-up/options forwarding, Gemini-search/Replit gates,
+body limits, image/follow-up/options forwarding, Gemini-search gating, Replit
+shared-only provider/model selection,
 service/provider errors, 429/503 retry headers, credential redaction,
 timeout/disconnect cancellation, direct rollback, consent/storage/soft counts,
-and IPA preference. All 76 tests and the production build passed. A local
+and IPA preference. All 79 tests and the production build passed. A local
 `vercel dev` instance on port 3000 also passed GET/generation, forged
 headers/selectors, inline images, search on/off, reasoning, and UTF-8 limits
 against the shared service's actual auth/normalization/Ollama adapter on port
 3001. Provider HTTP responses were mocked with dummy credentials, so this made
 no paid provider calls. The release smoke command passed against that fixture.
+The Replit follow-up also passed separate text/validation, image-color, and search
+smokes through local Vercel and the actual shared Replit adapter, with gateway
+responses mocked. No live Replit gateway access or deployed Replit feature support
+has been validated by those local checks.
 
 Preview/production provider checks, published public-proxy WAF controls,
 provider-console spending verification, promotion, and observation remain

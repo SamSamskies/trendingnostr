@@ -45,8 +45,13 @@ The default is the retained direct implementation. The browser continues calling
 images, search controls, follow-ups, and non-streaming responses are unchanged.
 
 Set `SHARED_INFERENCE_URL`, `SHARED_INFERENCE_APP_SECRET`, and the selected
-provider's `SHARED_INFERENCE_OLLAMA_API_KEY` or `SHARED_INFERENCE_GEMINI_API_KEY`
-in the backend environment. The existing `INFERENCE_PROVIDER`,
+provider's `SHARED_INFERENCE_OLLAMA_API_KEY`, `SHARED_INFERENCE_GEMINI_API_KEY`, or
+`SHARED_INFERENCE_REPLIT_API_KEY` in the backend environment.
+Use `SHARED_INFERENCE_PROVIDER=replit` and
+`REPLIT_INFERENCE_MODEL=google/gemma-4-26b-a4b-it` to select Replit independently
+of the direct route. Replit is shared-service only; its dedicated model setting
+does not use `INFERENCE_MODEL`. Keep `INFERENCE_PROVIDER=ollama` for direct rollback.
+Without a shared-provider override, the existing `INFERENCE_PROVIDER`,
 `OLLAMA_INFERENCE_MODEL`, `GEMINI_MODEL`, and legacy model precedence still apply.
 Shared routing never falls back to a direct-route credential. Browser-supplied
 credentials/provider/model selectors cannot override backend configuration.
@@ -68,7 +73,8 @@ spending cap. The per-process limits below describe the retained direct route.
 Ollama is the shared route's validated search provider. Gemini text/vision can
 use shared routing with search off; shared Gemini search rejects requests until
 `SHARED_INFERENCE_GEMINI_SEARCH_ENABLED=true` is set after live validation for the
-selected model. Replit routing remains unavailable pending app-specific checks.
+selected model. Replit must pass live text/vision/search checks in a protected
+preview before production rollout; registry metadata alone does not verify a model.
 
 Follow the [rollout and rollback runbook](docs/shared-inference-rollout.md) before
 switching public traffic: public-proxy IP controls and provider spending
