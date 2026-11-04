@@ -8,6 +8,7 @@ import handler, { imageFetchDns } from "../api/inference.js";
 const originalFetch = globalThis.fetch;
 const originalLookupAll = imageFetchDns.lookupAll;
 const envNames = [
+  "SHARED_INFERENCE_ENABLED",
   "INFERENCE_PROVIDER",
   "INFERENCE_API_KEY",
   "GEMINI_API_KEY",
@@ -23,6 +24,7 @@ beforeEach(() => {
     envNames.map((key) => [key, process.env[key]]),
   );
   process.env.INFERENCE_API_KEY = "test-key-not-a-credential";
+  process.env.SHARED_INFERENCE_ENABLED = "false";
   process.env.INFERENCE_PROVIDER = "gemini";
   process.env.INFERENCE_MODEL = "test-model";
   process.env.INFERENCE_FALLBACK_ENABLED = "true";

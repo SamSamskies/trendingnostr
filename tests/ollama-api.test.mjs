@@ -9,6 +9,7 @@ const originalFetch = globalThis.fetch;
 const originalLookup = imageFetchDns.lookupAll;
 const originalNow = Date.now;
 const envNames = [
+  "SHARED_INFERENCE_ENABLED",
   "INFERENCE_PROVIDER", "INFERENCE_API_KEY", "INFERENCE_MODEL",
   "INFERENCE_FALLBACK_ENABLED", "INFERENCE_CLIENT_DAILY_LIMIT",
   "GEMINI_API_KEY", "GEMINI_MODEL", "GEMINI_FALLBACK_ENABLED",
