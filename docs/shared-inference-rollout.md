@@ -30,8 +30,11 @@ upstream work. Vercel environment changes require a new deployment to take effec
 
 The proxy constructs trusted `X-Inference-App: trendingnostr`, bearer app auth,
 matching `X-Inference-Provider-Key`, one provider query parameter, and the model
-in each POST. Browser credentials/selectors, Origin, cookies, and Host are not
-forwarded. Requests retain the 100,000-byte UTF-8 limit, 180-second timeout,
+in each POST. Browser authentication headers, top-level credentials/selectors,
+Origin, cookies, and Host are not forwarded. The proxy selects only the public `messages`, `webSearch`, and
+`options` fields and injects its model. Their contents are validated by the
+shared API, keeping message/image/option rules in one place. Requests retain the
+100,000-byte UTF-8 limit, 180-second timeout,
 200-second function duration, cancellation, sanitized error JSON, and
 `Retry-After`. Shared Gemini search remains gated by
 `SHARED_INFERENCE_GEMINI_SEARCH_ENABLED=true` after separate live validation.
@@ -140,7 +143,7 @@ app authentication, Replit selection/model, and the warmer secret remain intact.
 
 Validation on November 4, 2026:
 
-- All 49 remaining automated tests and `npm run build` passed. The deleted
+- All 51 remaining automated tests and `npm run build` passed. The deleted
   direct-only tests account for the smaller suite; proxy and browser regression
   coverage remains. `git diff --check` and inference-path reference checks passed.
 - The existing production shared-Replit deployment passed text generation,
@@ -160,3 +163,13 @@ Validation on November 4, 2026:
   a live local run could not authenticate using Vercel's blank sensitive exports.
   No manual browser/extension check, deployment, promotion, or production load
   test was performed for this cleanup.
+
+The proxy was further simplified to remove its duplicate message-role, image,
+prompt-character, search-value, and option validation. The shared API owns those
+rules; the proxy retains JSON/object parsing, incoming/outgoing byte limits,
+trusted top-level field selection, and the app's Gemini-search rollout gate.
+A local compatibility check passed against the shared API's actual request
+normalizer using dummy credentials and no network/provider calls. It verified
+service-owned prompt/options validation, search normalization, and ignored
+browser credential fields in options. These checks do not replace deployment
+validation.

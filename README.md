@@ -60,7 +60,9 @@ non-streaming JSON responses are preserved. The shared service owns provider
 limits and per-app admission; its regional limits are not an exact global daily
 quota or spending cap.
 
-The proxy enforces a 100,000-byte UTF-8 request limit and a 180-second timeout,
+The shared API validates messages, images, options, and model capabilities. The
+proxy forwards only the allowed top-level payload fields with its server-selected
+model and enforces a 100,000-byte UTF-8 request limit and a 180-second timeout,
 within the 200-second Vercel function duration. Disconnecting cancels the
 outbound request. Status/error JSON and `Retry-After` pass through without
 proxy retries or direct-provider fallback. Set `INFERENCE_FALLBACK_ENABLED=false`
