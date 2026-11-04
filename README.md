@@ -69,10 +69,19 @@ proxy retries or direct-provider fallback. Set `INFERENCE_FALLBACK_ENABLED=false
 (or `0`/`off`) to disable hosted inference. Vercel backend setting changes take
 effect on a new deployment; this does not require a new browser contract.
 
-See the [shared-service operations and rollback runbook](docs/shared-inference-rollout.md)
-for the known working shared-service deployment, functional smoke commands, and
-environment cleanup record. Rollback uses that deployment; the old routing toggle
-and direct-provider implementation have been retired.
+Check hosted inference with the smoke script:
+
+```sh
+npm run smoke:inference -- --url https://HOST/api/inference --provider replit --checks
+npm run smoke:inference -- --url https://HOST/api/inference --provider replit \
+  --image-url https://IMAGE_HOST/full-size-note.jpg --image-expect VISIBLE_SUBJECT \
+  --search --follow-up
+```
+
+The full-size image check requires an image over 1 MB and at most 4 MB, plus a
+visible subject or text to check in the answer. Each command makes one real
+generation; `--follow-up` adds another. For rollback, restore a known working
+shared-service deployment through Vercel's deployment history.
 
 ## Build
 
