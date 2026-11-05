@@ -248,12 +248,18 @@ export function TipDialog({
   }, []);
 
   useEffect(() => {
+    const dialog = dialogRef.current;
+    if (dialog?.classList.contains("is-closing")) {
+      window.clearTimeout(closeTimerRef.current);
+      dialog.classList.remove("is-closing");
+    }
     const cached = readCachedPaytoTags(pubkey);
     const cachedExtra = cached ? paymentTargetsFromPaytoTags(cached) : [];
     setExtra(cachedExtra);
     setExtraStatus(cached ? "done" : "loading");
     setSelectedId(null);
     setCopied(false);
+    setQrOpen(false);
     setFreshnessTick((n) => n + 1);
 
     let cancelled = false;
