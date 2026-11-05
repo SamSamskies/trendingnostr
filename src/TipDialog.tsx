@@ -39,6 +39,31 @@ function prefersReducedMotion(): boolean {
   return window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 }
 
+const TOUCH_QUERY = "(hover: none) and (pointer: coarse)";
+
+/** Touch-first devices can't scan their own screen, so lead with the wallet link. */
+function useTouchFirst(): boolean {
+  const [touch, setTouch] = useState(
+    () => window.matchMedia(TOUCH_QUERY).matches
+  );
+  useEffect(() => {
+    const query = window.matchMedia(TOUCH_QUERY);
+    const onChange = () => setTouch(query.matches);
+    query.addEventListener("change", onChange);
+    return () => query.removeEventListener("change", onChange);
+  }, []);
+  return touch;
+}
+
+/** Split `lightning:foo@bar` into a muted scheme prefix and the payload. */
+function splitUriScheme(uri: string): { scheme: string; rest: string } {
+  const match = /^([a-z][a-z0-9+.-]*:(?:\/\/)?)(.+)$/i.exec(uri);
+  return match ? { scheme: match[1]!, rest: match[2]! } : { scheme: "", rest: uri };
+}
+
+/** Networks where a tip would be worth nothing (or lost) on mainnet. */
+const TEST_NETWORK_RE = /testnet|signet|regtest/i;
+
 export function TipButton({
   pubkey,
   pressed,
@@ -137,6 +162,9 @@ export function TipDialog({
   });
   const [copied, setCopied] = useState(false);
   const [freshnessTick, setFreshnessTick] = useState(0);
+  const touchFirst = useTouchFirst();
+  const [qrOpen, setQrOpen] = useState(false);
+  const showQr = !touchFirst || qrOpen;
 
   const targets = useMemo(
     () => mergePaymentTargets(profileTargets, extra),
@@ -154,6 +182,14 @@ export function TipDialog({
         : readCachedPaytoCachedAt(pubkey);
     return formatCacheAge(cachedAt);
   }, [selected, pubkey, freshnessTick]);
+
+  const copySelected = () => {
+    if (!selected) return;
+    void navigator.clipboard.writeText(selected.uri).then(
+      () => setCopied(true),
+      () => setCopied(false)
+    );
+  };
 
   useImperativeHandle(ref, () => ({
     close: () => startCloseRef.current(),
@@ -212,12 +248,18 @@ export function TipDialog({
   }, []);
 
   useEffect(() => {
+    const dialog = dialogRef.current;
+    if (dialog?.classList.contains("is-closing")) {
+      window.clearTimeout(closeTimerRef.current);
+      dialog.classList.remove("is-closing");
+    }
     const cached = readCachedPaytoTags(pubkey);
     const cachedExtra = cached ? paymentTargetsFromPaytoTags(cached) : [];
     setExtra(cachedExtra);
     setExtraStatus(cached ? "done" : "loading");
     setSelectedId(null);
     setCopied(false);
+    setQrOpen(false);
     setFreshnessTick((n) => n + 1);
 
     let cancelled = false;
@@ -322,101 +364,150 @@ export function TipDialog({
         </header>
 
         <div className="tip-body">
-          {targets.length > 1 ? (
-            <div
-              className="tip-methods"
-              role="tablist"
-              aria-label="Payment methods"
-            >
-              {targets.map((target) => {
-                const isSelected = target.id === selected?.id;
-                return (
-                  <button
-                    key={target.id}
-                    type="button"
-                    className="tip-method"
-                    role="tab"
-                    aria-selected={isSelected}
-                    onClick={() => {
-                      setSelectedId(target.id);
-                      setCopied(false);
-                    }}
-                  >
-                    {target.label}
-                  </button>
-                );
-              })}
+          {targets.length > 0 ? (
+            <div className="tip-methods-row">
+              {targets.length > 1 ? (
+                <div
+                  className="tip-methods"
+                  role="tablist"
+                  aria-label="Payment methods"
+                >
+                  {targets.map((target) => {
+                    const isSelected = target.id === selected?.id;
+                    return (
+                      <button
+                        key={target.id}
+                        type="button"
+                        className="tip-method"
+                        role="tab"
+                        aria-selected={isSelected}
+                        onClick={() => {
+                          setSelectedId(target.id);
+                          setCopied(false);
+                        }}
+                      >
+                        {target.label}
+                      </button>
+                    );
+                  })}
+                </div>
+              ) : (
+                <div className="tip-methods">
+                  <span className="tip-method is-static">
+                    {targets[0]!.label}
+                  </span>
+                </div>
+              )}
+              {extraStatus === "loading" ? (
+                <span
+                  className="tip-spinner"
+                  role="status"
+                  aria-label="Looking for more addresses"
+                  title="Looking for more addresses…"
+                />
+              ) : null}
             </div>
           ) : null}
 
           {selected && selectedDetails ? (
             <div className="tip-selected">
-              {targets.length === 1 ? (
-                <p className="tip-method-label">{selected.label}</p>
+              {touchFirst ? (
+                <button
+                  type="button"
+                  className="tip-qr-toggle"
+                  aria-expanded={qrOpen}
+                  onClick={() => setQrOpen((open) => !open)}
+                >
+                  {qrOpen ? "Hide QR code" : "Show QR code"}
+                </button>
               ) : null}
-              <QrCode
-                value={selected.uri}
-                label={`QR code for ${selected.label} address`}
-              />
-              <p className="tip-address">{selected.uri}</p>
-              <dl className="tip-confirm">
-                <div>
-                  <dt>Source</dt>
-                  <dd>
-                    {selectedDetails.sourceLabel}
-                    {freshnessLabel ? ` · ${freshnessLabel}` : null}
-                  </dd>
-                </div>
+              {showQr ? (
+                <QrCode
+                  value={selected.uri}
+                  label={`QR code for ${selected.label} address`}
+                />
+              ) : null}
+              <button
+                type="button"
+                className="tip-address"
+                title="Copy"
+                aria-label={`Copy ${selected.uri}`}
+                onClick={copySelected}
+              >
+                <span className="tip-address-scheme">
+                  {splitUriScheme(selected.uri).scheme}
+                </span>
+                {splitUriScheme(selected.uri).rest}
+              </button>
+              {selectedDetails.amount ? (
+                <p className="tip-amount">
+                  <span>Amount</span> {selectedDetails.amount}
+                </p>
+              ) : null}
+              <p className="tip-meta">
                 {selectedDetails.network &&
                 selectedDetails.network !== selected.label ? (
-                  <div>
-                    <dt>Network</dt>
-                    <dd>{selectedDetails.network}</dd>
-                  </div>
+                  <>
+                    <span
+                      className={
+                        TEST_NETWORK_RE.test(selectedDetails.network)
+                          ? "is-warning"
+                          : undefined
+                      }
+                    >
+                      {selectedDetails.network}
+                    </span>
+                    {" · "}
+                  </>
                 ) : null}
-                {selectedDetails.amount ? (
-                  <div>
-                    <dt>Amount</dt>
-                    <dd>{selectedDetails.amount}</dd>
-                  </div>
-                ) : null}
-              </dl>
+                <span title={selectedDetails.sourceLabel}>
+                  {selected.source === "profile"
+                    ? "From profile"
+                    : "From payto list"}
+                </span>
+                {freshnessLabel ? ` · Updated ${freshnessLabel}` : null}
+              </p>
             </div>
           ) : extraStatus === "done" ? (
             <p className="tip-empty">No payment addresses found.</p>
           ) : (
-            <p className="tip-status">Looking up payment addresses…</p>
+            <div className="tip-selected" aria-busy="true">
+              <div className="tip-qr-skeleton" aria-hidden="true" />
+              <p className="tip-status">Looking up payment addresses…</p>
+            </div>
           )}
-
-          {extraStatus === "loading" && targets.length > 0 ? (
-            <p className="tip-status">Looking for more addresses…</p>
-          ) : null}
         </div>
         {selected ? (
           <div className="tip-actions">
-            <button
-              type="button"
-              className="primary"
-              onClick={() => {
-                void navigator.clipboard.writeText(selected.uri).then(
-                  () => setCopied(true),
-                  () => setCopied(false)
-                );
-              }}
-            >
-              {copied ? "Copied" : "Copy"}
-            </button>
-            {selected.openable ? (
-              <a
-                className="secondary"
-                href={selected.uri}
-                {...(selected.uri.startsWith("https:")
-                  ? { target: "_blank", rel: "noopener noreferrer" }
-                  : {})}
-              >
-                Open wallet
-              </a>
-            ) : null}
+            {(() => {
+              const walletFirst = touchFirst && selected.openable;
+              const copyButton = (
+                <button
+                  key="copy"
+                  type="button"
+                  className={walletFirst ? "secondary" : "primary"}
+                  aria-live="polite"
+                  onClick={copySelected}
+                >
+                  {copied ? "Copied ✓" : "Copy"}
+                </button>
+              );
+              const walletLink = selected.openable ? (
+                <a
+                  key="open"
+                  className={walletFirst ? "primary" : "secondary"}
+                  href={selected.uri}
+                  {...(selected.uri.startsWith("https:")
+                    ? { target: "_blank", rel: "noopener noreferrer" }
+                    : {})}
+                >
+                  Open wallet
+                </a>
+              ) : null;
+              return walletFirst
+                ? [walletLink, copyButton]
+                : [copyButton, walletLink];
+            })()}
           </div>
         ) : null}
       </div>
