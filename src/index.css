@@ -1755,6 +1755,7 @@ a.open-in-link:focus-visible,
   color: var(--ink);
   box-shadow: var(--shadow);
   inset: 0 0 0 auto;
+  overflow: hidden;
 }
 
 .tip-dialog[open] {
@@ -1815,6 +1816,7 @@ a.open-in-link:focus-visible,
   flex: 1;
   width: 100%;
   min-height: 0;
+  overflow: hidden;
 }
 
 .tip-header {
@@ -1926,7 +1928,8 @@ a.open-in-link:focus-visible,
   flex: 1;
   min-height: 0;
   overflow: auto;
-  padding: 1rem 1rem 1.25rem;
+  overscroll-behavior: contain;
+  padding: 1rem;
 }
 
 .tip-method-label,
@@ -1949,7 +1952,7 @@ a.open-in-link:focus-visible,
 .tip-confirm {
   display: grid;
   gap: 0.35rem;
-  margin: 0 0 0.9rem;
+  margin: 0.75rem 0 0;
   padding: 0.65rem 0.75rem;
   border: 1px solid var(--line);
   border-radius: 10px;
@@ -1984,8 +1987,8 @@ a.open-in-link:focus-visible,
   display: flex;
   flex-wrap: wrap;
   justify-content: center;
-  gap: 0.4rem;
-  margin: 0 0 1rem;
+  gap: 0.35rem;
+  margin: -0.4rem 0 0.5rem;
 }
 
 .tip-method {
@@ -2025,7 +2028,7 @@ a.open-in-link:focus-visible,
 }
 
 .tip-address {
-  margin: 0 0 0.9rem;
+  margin: 0;
   font-family: var(--font-mono);
   font-size: 0.72rem;
   line-height: 1.45;
@@ -2035,9 +2038,13 @@ a.open-in-link:focus-visible,
 }
 
 .tip-actions {
+  flex: none;
   display: flex;
   flex-direction: column;
   gap: 0.5rem;
+  padding: 0.75rem 1rem 1rem;
+  border-top: 1px solid var(--line);
+  background: var(--panel);
 }
 
 .tip-actions > .primary,
@@ -2529,6 +2536,10 @@ a.open-in-link:focus-visible,
     border-left: none;
     border-top: 3px solid var(--accent);
     border-radius: 16px 16px 0 0;
+  }
+
+  .tip-dialog {
+    padding-bottom: env(safe-area-inset-bottom);
   }
 
   @keyframes ask-ai-drawer-in {

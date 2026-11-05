@@ -354,6 +354,11 @@ export function TipDialog({
               {targets.length === 1 ? (
                 <p className="tip-method-label">{selected.label}</p>
               ) : null}
+              <QrCode
+                value={selected.uri}
+                label={`QR code for ${selected.label} address`}
+              />
+              <p className="tip-address">{selected.uri}</p>
               <dl className="tip-confirm">
                 <div>
                   <dt>Source</dt>
@@ -362,7 +367,8 @@ export function TipDialog({
                     {freshnessLabel ? ` · ${freshnessLabel}` : null}
                   </dd>
                 </div>
-                {selectedDetails.network ? (
+                {selectedDetails.network &&
+                selectedDetails.network !== selected.label ? (
                   <div>
                     <dt>Network</dt>
                     <dd>{selectedDetails.network}</dd>
@@ -375,36 +381,6 @@ export function TipDialog({
                   </div>
                 ) : null}
               </dl>
-              <QrCode
-                value={selected.uri}
-                label={`QR code for ${selected.label} address`}
-              />
-              <p className="tip-address">{selected.uri}</p>
-              <div className="tip-actions">
-                <button
-                  type="button"
-                  className="primary"
-                  onClick={() => {
-                    void navigator.clipboard.writeText(selected.uri).then(
-                      () => setCopied(true),
-                      () => setCopied(false)
-                    );
-                  }}
-                >
-                  {copied ? "Copied" : "Copy"}
-                </button>
-                {selected.openable ? (
-                  <a
-                    className="secondary"
-                    href={selected.uri}
-                    {...(selected.uri.startsWith("https:")
-                      ? { target: "_blank", rel: "noopener noreferrer" }
-                      : {})}
-                  >
-                    Open wallet
-                  </a>
-                ) : null}
-              </div>
             </div>
           ) : extraStatus === "done" ? (
             <p className="tip-empty">No payment addresses found.</p>
@@ -416,6 +392,33 @@ export function TipDialog({
             <p className="tip-status">Looking for more addresses…</p>
           ) : null}
         </div>
+        {selected ? (
+          <div className="tip-actions">
+            <button
+              type="button"
+              className="primary"
+              onClick={() => {
+                void navigator.clipboard.writeText(selected.uri).then(
+                  () => setCopied(true),
+                  () => setCopied(false)
+                );
+              }}
+            >
+              {copied ? "Copied" : "Copy"}
+            </button>
+            {selected.openable ? (
+              <a
+                className="secondary"
+                href={selected.uri}
+                {...(selected.uri.startsWith("https:")
+                  ? { target: "_blank", rel: "noopener noreferrer" }
+                  : {})}
+              >
+                Open wallet
+              </a>
+            ) : null}
+          </div>
+        ) : null}
       </div>
     </dialog>
   );

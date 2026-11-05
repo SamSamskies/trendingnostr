@@ -263,26 +263,26 @@ function describePaymentPayload(target: PaymentTarget): {
     }
     const invoice = describeBolt11(target.address);
     if (invoice) return invoice;
-    return { network: "Lightning", amount: "Any amount" };
+    return { network: "Lightning", amount: null };
   }
   if (target.type === "bip352") {
     return {
       network: target.address.startsWith("tsp1")
         ? "Bitcoin testnet"
         : "Bitcoin",
-      amount: "Any amount",
+      amount: null,
     };
   }
   if (target.type === "bip353") {
     return { network: "Bitcoin DNS", amount: "Resolved by wallet" };
   }
   if (target.type === "bitcoin") {
-    return { network: "Bitcoin", amount: "Any amount" };
+    return { network: "Bitcoin", amount: null };
   }
   if (SCHEME_TYPES.has(target.type) || TYPE_LABELS[target.type]) {
     return {
       network: TYPE_LABELS[target.type] ?? titleType(target.type),
-      amount: "Any amount",
+      amount: null,
     };
   }
   return { network: titleType(target.type), amount: null };
@@ -294,7 +294,7 @@ function describePaymentPayload(target: PaymentTarget): {
  */
 function describeBolt11(invoice: string): {
   network: string;
-  amount: string;
+  amount: string | null;
 } | null {
   const lower = invoice.toLowerCase();
   let network: string | null = null;
@@ -322,7 +322,7 @@ function describeBolt11(invoice: string): {
   const sep = head.lastIndexOf("1");
   if (sep < prefixLen) return { network, amount: "Invoice" };
   const amount = head.slice(prefixLen, sep);
-  if (!amount) return { network, amount: "Any amount" };
+  if (!amount) return { network, amount: null };
 
   const multipliers: Record<string, number> = {
     m: 1e5,
@@ -341,6 +341,6 @@ function describeBolt11(invoice: string): {
     if (!Number.isFinite(n) || n < 0) return { network, amount: "Invoice" };
     sats = Math.floor(n * 1e8);
   }
-  if (sats <= 0) return { network, amount: "Any amount" };
+  if (sats <= 0) return { network, amount: null };
   return { network, amount: `${sats.toLocaleString()} sats (fixed)` };
 }
