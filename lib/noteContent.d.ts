@@ -34,6 +34,12 @@ export declare const DOWNRANKED_HASHTAGS: ReadonlyArray<{
  */
 export declare const BANNED_HASHTAGS: ReadonlySet<string>;
 
+/**
+ * Whole words that hard-drop a note from the trending feed when they appear
+ * in content. Case-insensitive; matched on word boundaries.
+ */
+export declare const BANNED_WORDS: ReadonlySet<string>;
+
 /** Cap kind-1 `content` in API / Runtime Cache payloads. */
 export declare const MAX_CACHED_NOTE_CONTENT_CHARS: number;
 
@@ -95,6 +101,12 @@ export declare function hasBannedHashtag(note: {
 }): boolean;
 
 /**
+ * True when content contains a whole word from BANNED_WORDS (case-insensitive,
+ * word boundaries). Those notes are dropped from the feed.
+ */
+export declare function hasBannedWord(content: string | undefined): boolean;
+
+/**
  * True when a note has an active downranked hashtag (not yet past `until`).
  */
 export declare function hasDownrankedHashtag(
@@ -106,8 +118,8 @@ export declare function hasDownrankedHashtag(
 ): boolean;
 
 /**
- * Displayable body, no banned link host, and no banned hashtag — used before
- * ranking / feed assembly.
+ * Displayable body, no banned link host, no banned hashtag, and no banned
+ * word — used before ranking / feed assembly.
  */
 export declare function isEligibleTrendingNote(note: {
   tags?: string[][];

@@ -101,6 +101,7 @@ export {
   hasDownrankedLinkHost,
   hasBannedLinkHost,
   hasBannedHashtag,
+  hasBannedWord,
   hasDownrankedHashtag,
   activeDownrankedHashtags,
   isEligibleTrendingNote,
@@ -110,6 +111,7 @@ export {
   DOWNRANKED_HASHTAGS,
   BANNED_LINK_HOSTS,
   BANNED_HASHTAGS,
+  BANNED_WORDS,
 } from "../lib/noteContent.js";
 export type { NoteEngagement };
 
