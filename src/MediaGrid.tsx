@@ -142,6 +142,8 @@ export function useResolvedMediaUrl(url: string): ResolvedMediaState {
         if (attempt < HTREE_AUTO_RETRY_DELAYS_MS.length) {
           const delay = HTREE_AUTO_RETRY_DELAYS_MS[attempt]!;
           attempt += 1;
+          // Clear blob + mutable root caches so the next attempt re-queries relays.
+          invalidateHtreeMediaUrl(url);
           autoRetryTimer = setTimeout(() => {
             if (!cancelled) load();
           }, delay);
