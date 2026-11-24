@@ -35,7 +35,11 @@ import {
   useWebSearchEnabled,
 } from "./settings";
 import { encodeNpub, type Kind0Profile } from "./identity";
-import { isHtreeUrl, readHtreeMediaBytes } from "./htree";
+import {
+  isHtreeUrl,
+  MAX_HTREE_MEDIA_BYTES,
+  resolveHtreeMediaUrl,
+} from "./htree";
 import { noteImageUrls } from "./media";
 import { profileLabel } from "./mentions";
 import { AskAiMarkdown } from "./AskAiMarkdown";
@@ -52,9 +56,6 @@ const ASK_AI_IMAGE_MEDIA_TYPES = new Set([
 ]);
 
 type AskAiImageMediaType = "image/jpeg" | "image/png" | "image/webp" | "image/gif";
-
-/** Cap Hashtree downloads before Ask AI compression. */
-const ASK_AI_HTREE_MAX_BYTES = 5 * 1024 * 1024;
 
 /**
  * Max decoded bytes embedded per image after compression. Keeps hosted
@@ -130,16 +131,37 @@ async function compressImageForAskAi(
  * http(s) image parts stay as URLs (proxied later for IPA). `htree://` cannot
  * be fetched by IPA or hosted inference, so embed compressed bytes as
  * `{ mediaType, data }` (base64) that both paths accept.
+ *
+ * Prefer `resolveHtreeMediaUrl` so Ask AI shares in-flight work and the decoded
+ * blob cache with the feed when media is already warm.
  */
 async function resolveNoteImagePart(url: string): Promise<ContentPart | null> {
   if (!isHtreeUrl(url)) {
     return { type: "image", url };
   }
-  const result = await readHtreeMediaBytes(url, {
-    maxBytes: ASK_AI_HTREE_MAX_BYTES,
-  });
-  if (!result || !ASK_AI_IMAGE_MEDIA_TYPES.has(result.mimeType)) return null;
-  const compressed = await compressImageForAskAi(result.bytes, result.mimeType);
+
+  const blobUrl = await resolveHtreeMediaUrl(url);
+  if (!blobUrl) return null;
+
+  let bytes: Uint8Array;
+  let mimeType: string;
+  try {
+    const blob = await (await fetch(blobUrl)).blob();
+    if (blob.size === 0 || blob.size > MAX_HTREE_MEDIA_BYTES) return null;
+    bytes = new Uint8Array(await blob.arrayBuffer());
+    mimeType = blob.type || "application/octet-stream";
+  } catch {
+    return null;
+  }
+
+  if (
+    !ASK_AI_IMAGE_MEDIA_TYPES.has(mimeType) &&
+    mimeType !== "application/octet-stream"
+  ) {
+    return null;
+  }
+
+  const compressed = await compressImageForAskAi(bytes, mimeType);
   if (!compressed) return null;
   return {
     type: "image",
