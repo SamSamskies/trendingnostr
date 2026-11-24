@@ -35,12 +35,51 @@ import {
   useWebSearchEnabled,
 } from "./settings";
 import { encodeNpub, type Kind0Profile } from "./identity";
+import { isHtreeUrl, readHtreeMediaBytes } from "./htree";
 import { noteImageUrls } from "./media";
 import { profileLabel } from "./mentions";
 import { AskAiMarkdown } from "./AskAiMarkdown";
 import { type LocatedEvent, type NoteEngagement } from "./nostr";
 
 const MAX_NOTE_CHARS = 8000;
+
+/** Vision backends accept these MIME types; skip other Hashtree formats. */
+const ASK_AI_IMAGE_MEDIA_TYPES = new Set([
+  "image/jpeg",
+  "image/png",
+  "image/webp",
+  "image/gif",
+]);
+
+/** Cap Hashtree payloads embedded into Ask AI (base64 in the chat request). */
+const ASK_AI_HTREE_MAX_BYTES = 5 * 1024 * 1024;
+
+function bytesToBase64(bytes: Uint8Array): string {
+  let binary = "";
+  const chunk = 0x8000;
+  for (let i = 0; i < bytes.length; i += chunk) {
+    binary += String.fromCharCode(...bytes.subarray(i, i + chunk));
+  }
+  return btoa(binary);
+}
+
+/**
+ * http(s) image parts stay as URLs (proxied later for IPA). `htree://` cannot
+ * be fetched by IPA or hosted inference, so embed decrypted bytes as a data URL.
+ */
+async function resolveNoteImagePart(url: string): Promise<ContentPart | null> {
+  if (!isHtreeUrl(url)) {
+    return { type: "image", url };
+  }
+  const result = await readHtreeMediaBytes(url, {
+    maxBytes: ASK_AI_HTREE_MAX_BYTES,
+  });
+  if (!result || !ASK_AI_IMAGE_MEDIA_TYPES.has(result.mimeType)) return null;
+  return {
+    type: "image",
+    url: `data:${result.mimeType};base64,${bytesToBase64(result.bytes)}`,
+  };
+}
 
 function linkifyInferenceBridge(text: string) {
   const label = "Inference Bridge";
@@ -210,12 +249,12 @@ function buildNoteContext(
   ].join("\n");
 }
 
-function noteContextUserContent(
+async function noteContextUserContent(
   note: LocatedEvent,
   authorName: string,
   stats: NoteEngagement | undefined,
   includeImages: boolean
-): string | ContentPart[] {
+): Promise<string | ContentPart[]> {
   const text = buildNoteContext(note, authorName, stats);
   const images = noteImageUrls(note.content, note.tags);
   if (images.length === 0) return text;
@@ -223,11 +262,12 @@ function noteContextUserContent(
     const extraUrls = images.filter((url) => !text.includes(url));
     return extraUrls.length > 0 ? `${text}\n\n${extraUrls.join("\n")}` : text;
   }
+  const imageParts = (
+    await Promise.all(images.map((url) => resolveNoteImagePart(url)))
+  ).filter((part): part is ContentPart => part !== null);
+  if (imageParts.length === 0) return text;
   // Images first, then the existing note-context text (IPA / hosted vision).
-  return [
-    ...images.map((url): ContentPart => ({ type: "image", url })),
-    { type: "text", text },
-  ];
+  return [...imageParts, { type: "text", text }];
 }
 
 function SparkleIcon() {
@@ -325,9 +365,9 @@ export function AskAiPanel({
   );
   const webSearchEnabled = useWebSearchEnabled();
   const includeImages = useIncludeImagesEnabled();
-  const contextHasImages = Array.isArray(
-    noteContextUserContent(note, authorName, engagement, includeImages)
-  );
+  // Approximate before async Hashtree resolution; runTurn uses the real parts.
+  const contextHasImages =
+    includeImages && noteImageUrls(note.content, note.tags).length > 0;
   const maySearchWeb = busy
     ? thread.searchingWeb
     : canSearchWeb(contextHasImages);
@@ -429,12 +469,13 @@ export function AskAiPanel({
     const controller = new AbortController();
     inflight.set(note.id, controller);
     const noteId = note.id;
-    const contextContent = noteContextUserContent(
+    const contextContent = await noteContextUserContent(
       note,
       authorName,
       engagement,
       includeImages
     );
+    if (controller.signal.aborted || noteIdRef.current !== noteId) return;
     const hasImages = Array.isArray(contextContent);
     const canSearch = canSearchWeb(hasImages);
 
@@ -616,50 +657,57 @@ export function AskAiPanel({
   }, [note.id, ready]);
 
   useEffect(() => {
-    const current = getThread(note.id);
-    const restartingIntro = !current.visible.some(
-      (message) => message.role === "user"
-    );
-    // Follow-ups already have replies from the previous mode. Leave that
-    // transcript alone; the next runTurn applies the new image/search context.
-    if (!restartingIntro) return;
+    let cancelled = false;
+    void (async () => {
+      const current = getThread(note.id);
+      const restartingIntro = !current.visible.some(
+        (message) => message.role === "user"
+      );
+      // Follow-ups already have replies from the previous mode. Leave that
+      // transcript alone; the next runTurn applies the new image/search context.
+      if (!restartingIntro) return;
 
-    const nextContent = noteContextUserContent(
-      note,
-      authorName,
-      engagement,
-      includeImages
-    );
-    const canSearch = canSearchWeb(Array.isArray(nextContent));
-    const previousSystem =
-      current.history[0]?.role === "system"
-        ? current.history[0].content
-        : undefined;
-    if (
-      !patchNoteContextHistory(
-        current.history,
-        nextContent,
-        canSearch,
-        current.responseLanguage
+      const nextContent = await noteContextUserContent(
+        note,
+        authorName,
+        engagement,
+        includeImages
+      );
+      if (cancelled) return;
+      const canSearch = canSearchWeb(Array.isArray(nextContent));
+      const previousSystem =
+        current.history[0]?.role === "system"
+          ? current.history[0].content
+          : undefined;
+      if (
+        !patchNoteContextHistory(
+          current.history,
+          nextContent,
+          canSearch,
+          current.responseLanguage
+        )
       )
-    )
-      return;
+        return;
 
-    // Engagement, author, and clock updates rewrite note context without
-    // changing search/image instructions. Keep the intro; follow-ups pick
-    // up the patched history.
-    const nextSystem =
-      current.history[0]?.role === "system"
-        ? current.history[0].content
-        : undefined;
-    if (!systemPromptChanged(previousSystem, nextSystem)) return;
+      // Engagement, author, and clock updates rewrite note context without
+      // changing search/image instructions. Keep the intro; follow-ups pick
+      // up the patched history.
+      const nextSystem =
+        current.history[0]?.role === "system"
+          ? current.history[0].content
+          : undefined;
+      if (!systemPromptChanged(previousSystem, nextSystem)) return;
 
-    abortTurn(note.id);
-    current.history = [];
-    current.visible = [];
-    current.introStarted = true;
-    persist(note.id, current);
-    void runTurnRef.current(null);
+      abortTurn(note.id);
+      current.history = [];
+      current.visible = [];
+      current.introStarted = true;
+      persist(note.id, current);
+      void runTurnRef.current(null);
+    })();
+    return () => {
+      cancelled = true;
+    };
   }, [note, authorName, engagement, webSearchEnabled, includeImages]);
 
   function handleSubmit(event: FormEvent) {

@@ -384,7 +384,9 @@ function stripImageParts(messages: Message[]): Message[] {
         part?.type === "image" &&
         "url" in part &&
         typeof part.url === "string" &&
-        part.url
+        part.url &&
+        // Hashtree Ask AI parts embed bytes as data URLs; do not dump them as text.
+        !part.url.startsWith("data:")
       ) {
         imageUrls.push(part.url);
       }
