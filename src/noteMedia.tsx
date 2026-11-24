@@ -58,12 +58,18 @@ function StandaloneMedia({ item }: { item: NoteMediaItem }) {
         src={resolved.src}
         alt=""
         loading="lazy"
+        onError={resolved.onSrcError}
       />
     );
   }
 
   return (
-    <video className="note-video" src={resolved.src} controls>
+    <video
+      className="note-video"
+      src={resolved.src}
+      controls
+      onError={resolved.onSrcError}
+    >
       {item.url}
     </video>
   );

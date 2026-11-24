@@ -1,10 +1,17 @@
-import { useEffect, useId, useRef, useState, type PointerEvent } from "react";
+import {
+  useEffect,
+  useId,
+  useRef,
+  useState,
+  type PointerEvent,
+} from "react";
 import type { MediaKind } from "./media";
 import {
   getCachedHtreeMediaTtlMs,
   getCachedHtreeMediaUrl,
   invalidateHtreeMediaUrl,
   isHtreeUrl,
+  retainHtreeMediaUrl,
   resolveHtreeMediaUrl,
 } from "./htree";
 
@@ -14,24 +21,44 @@ export type NoteMediaItem = {
 };
 
 export type ResolvedMediaState =
-  | { status: "ready"; src: string }
+  | { status: "ready"; src: string; onSrcError: () => void }
   | { status: "loading" }
   | { status: "error"; retry: () => void };
 
 /** Auto-retries after the first failure before surfacing a permanent error. */
 const HTREE_AUTO_RETRY_DELAYS_MS = [1_000, 3_000] as const;
 
+/** Cap recoveries from revoked blob: URLs before surfacing a permanent error. */
+const HTREE_SRC_ERROR_RECOVER_LIMIT = 2;
+
 export function useResolvedMediaUrl(url: string): ResolvedMediaState {
   const [retryToken, setRetryToken] = useState(0);
+  const srcErrorRecoveriesRef = useRef(0);
+  const releaseRetainRef = useRef<(() => void) | null>(null);
+
+  const releaseRetain = () => {
+    releaseRetainRef.current?.();
+    releaseRetainRef.current = null;
+  };
+
   const [state, setState] = useState<ResolvedMediaState>(() => {
-    if (!url || !isHtreeUrl(url)) return { status: "ready", src: url };
+    if (!url || !isHtreeUrl(url)) {
+      return { status: "ready", src: url, onSrcError: () => {} };
+    }
     const cached = getCachedHtreeMediaUrl(url);
-    return cached ? { status: "ready", src: cached } : { status: "loading" };
+    return cached
+      ? { status: "ready", src: cached, onSrcError: () => {} }
+      : { status: "loading" };
   });
 
   useEffect(() => {
+    srcErrorRecoveriesRef.current = 0;
+  }, [url]);
+
+  useEffect(() => {
     if (!url || !isHtreeUrl(url)) {
-      setState({ status: "ready", src: url });
+      releaseRetain();
+      setState({ status: "ready", src: url, onSrcError: () => {} });
       return;
     }
 
@@ -51,11 +78,38 @@ export function useResolvedMediaUrl(url: string): ResolvedMediaState {
       }
     };
 
+    const onSrcError = () => {
+      if (cancelled) return;
+      if (srcErrorRecoveriesRef.current >= HTREE_SRC_ERROR_RECOVER_LIMIT) {
+        releaseRetain();
+        setState({
+          status: "error",
+          retry: () => {
+            srcErrorRecoveriesRef.current = 0;
+            setRetryToken((token) => token + 1);
+          },
+        });
+        return;
+      }
+      srcErrorRecoveriesRef.current += 1;
+      invalidateHtreeMediaUrl(url);
+      setRetryToken((token) => token + 1);
+    };
+
+    const setReady = (src: string) => {
+      releaseRetain();
+      releaseRetainRef.current = retainHtreeMediaUrl(url);
+      setState({ status: "ready", src, onSrcError });
+    };
+
     const scheduleMutableRefresh = () => {
       const ttl = getCachedHtreeMediaTtlMs(url);
       if (ttl === null) return;
       refreshTimer = setTimeout(() => {
         if (cancelled) return;
+        // Drop paint before revoke so onError does not burn recoveries.
+        releaseRetain();
+        setState({ status: "loading" });
         invalidateHtreeMediaUrl(url);
         load();
       }, ttl + 1);
@@ -66,16 +120,17 @@ export function useResolvedMediaUrl(url: string): ResolvedMediaState {
 
       const cached = getCachedHtreeMediaUrl(url);
       if (cached) {
-        setState({ status: "ready", src: cached });
+        setReady(cached);
         scheduleMutableRefresh();
         return;
       }
 
+      releaseRetain();
       setState({ status: "loading" });
       void resolveHtreeMediaUrl(url).then((resolved) => {
         if (cancelled) return;
         if (resolved) {
-          setState({ status: "ready", src: resolved });
+          setReady(resolved);
           scheduleMutableRefresh();
           return;
         }
@@ -99,6 +154,7 @@ export function useResolvedMediaUrl(url: string): ResolvedMediaState {
     return () => {
       cancelled = true;
       clearTimers();
+      releaseRetain();
     };
   }, [url, retryToken]);
 
@@ -285,9 +341,22 @@ function MediaLightbox({
               </button>
             </div>
           ) : item.kind === "image" ? (
-            <img src={resolved.src} alt="" decoding="async" draggable={false} />
+            <img
+              src={resolved.src}
+              alt=""
+              decoding="async"
+              draggable={false}
+              onError={resolved.onSrcError}
+            />
           ) : (
-            <video key={resolved.src} src={resolved.src} controls autoPlay playsInline>
+            <video
+              key={resolved.src}
+              src={resolved.src}
+              controls
+              autoPlay
+              playsInline
+              onError={resolved.onSrcError}
+            >
               {item.url}
             </video>
           )}
@@ -381,6 +450,7 @@ function MediaGridTile({
           loading="lazy"
           decoding="async"
           draggable={false}
+          onError={resolved.onSrcError}
         />
       ) : (
         <>
@@ -391,6 +461,7 @@ function MediaGridTile({
             muted
             playsInline
             tabIndex={-1}
+            onError={resolved.onSrcError}
           />
           <PlayBadge />
         </>

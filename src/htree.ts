@@ -538,6 +538,8 @@ const resolvedBlobUrlCache = new Map<string, ResolvedBlobCacheEntry>();
 /** LRU order: oldest at the front. */
 const resolvedBlobLruOrder: string[] = [];
 let resolvedBlobCacheBytes = 0;
+/** Refcounts for blob keys currently shown in the feed / lightbox. */
+const retainedBlobKeys = new Map<string, number>();
 const inFlightResolutionCache = new Map<string, Promise<string | null>>();
 
 function touchResolvedBlobKey(key: string): void {
@@ -545,6 +547,10 @@ function touchResolvedBlobKey(key: string): void {
   if (idx < 0) return;
   resolvedBlobLruOrder.splice(idx, 1);
   resolvedBlobLruOrder.push(key);
+}
+
+function isRetainedBlobKey(key: string): boolean {
+  return (retainedBlobKeys.get(key) ?? 0) > 0;
 }
 
 function removeResolvedBlobEntry(key: string): void {
@@ -568,17 +574,22 @@ function putResolvedBlobEntry(
   resolvedBlobLruOrder.push(key);
   resolvedBlobCacheBytes += entry.byteLength;
 
+  let scanned = 0;
   while (
     resolvedBlobCacheBytes > MAX_HTREE_BLOB_CACHE_BYTES &&
-    resolvedBlobLruOrder.length > 0
+    resolvedBlobLruOrder.length > 0 &&
+    scanned < resolvedBlobLruOrder.length
   ) {
     const oldest = resolvedBlobLruOrder[0]!;
+    scanned += 1;
     if (oldest === key && resolvedBlobLruOrder.length === 1) break;
-    if (oldest === key) {
-      touchResolvedBlobKey(key);
+    // Keep blobs that are still on screen; rotate them to the MRU end.
+    if (oldest === key || isRetainedBlobKey(oldest)) {
+      touchResolvedBlobKey(oldest);
       continue;
     }
     removeResolvedBlobEntry(oldest);
+    scanned = 0;
   }
 }
 
@@ -589,11 +600,33 @@ function takeResolvedBlobEntry(
   const entry = resolvedBlobUrlCache.get(key);
   if (!entry) return undefined;
   if (entry.expiresAt !== null && Date.now() >= entry.expiresAt) {
+    // Still painted: leave bytes until the media hook refreshes / releases.
+    if (isRetainedBlobKey(key)) {
+      touchResolvedBlobKey(key);
+      return entry;
+    }
     removeResolvedBlobEntry(key);
     return undefined;
   }
   touchResolvedBlobKey(key);
   return entry;
+}
+
+/**
+ * Pin a resolved blob so LRU eviction (and TTL cleanup) cannot revoke it while
+ * an `<img>` / `<video>` is still showing it. Returns a release function.
+ */
+export function retainHtreeMediaUrl(rawUrl: string): () => void {
+  const key = normalizeHtreeUrl(rawUrl);
+  retainedBlobKeys.set(key, (retainedBlobKeys.get(key) ?? 0) + 1);
+  let released = false;
+  return () => {
+    if (released) return;
+    released = true;
+    const next = (retainedBlobKeys.get(key) ?? 1) - 1;
+    if (next <= 0) retainedBlobKeys.delete(key);
+    else retainedBlobKeys.set(key, next);
+  };
 }
 
 export function getCachedHtreeMediaUrl(rawUrl: string): string | undefined {
