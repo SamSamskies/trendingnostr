@@ -446,7 +446,16 @@ export function fetchEventByAddress(
 
 const HASHTREE_ROOT_KINDS = [30064, 30078] as const;
 const HASHTREE_ROOT_RELAYS = ["wss://relay.iris.to"] as const;
-const hashtreeRootEventCache = new Map<string, Promise<Event | null>>();
+/** Kind 30064 roots are replaceable; expire hits so updates are picked up. */
+const HASHTREE_ROOT_CACHE_TTL_MS = 5 * 60 * 1000;
+
+type HashtreeRootCacheEntry = {
+  promise: Promise<Event | null>;
+  /** `null` while in flight; set when a non-null root resolves. */
+  expiresAt: number | null;
+};
+
+const hashtreeRootEventCache = new Map<string, HashtreeRootCacheEntry>();
 
 /**
  * Fetch the latest valid Hashtree mutable root event (kind 30064, or legacy
@@ -463,7 +472,12 @@ export function fetchHashtreeRootEvent(
 
   const cacheKey = `${author}:${d}`;
   const existing = hashtreeRootEventCache.get(cacheKey);
-  if (existing) return existing;
+  if (existing) {
+    if (existing.expiresAt === null || Date.now() < existing.expiresAt) {
+      return existing.promise;
+    }
+    hashtreeRootEventCache.delete(cacheKey);
+  }
 
   const pending = queryRelayOnce(mergeHydrationRelays(HASHTREE_ROOT_RELAYS), {
     kinds: [...HASHTREE_ROOT_KINDS],
@@ -489,19 +503,25 @@ export function fetchHashtreeRootEvent(
       });
 
       const match = valid[0] ?? null;
-      if (!match && hashtreeRootEventCache.get(cacheKey) === pending) {
-        hashtreeRootEventCache.delete(cacheKey);
+      const entry = hashtreeRootEventCache.get(cacheKey);
+      if (entry?.promise === pending) {
+        if (!match) {
+          hashtreeRootEventCache.delete(cacheKey);
+        } else {
+          entry.expiresAt = Date.now() + HASHTREE_ROOT_CACHE_TTL_MS;
+        }
       }
       return match;
     })
     .catch(() => {
-      if (hashtreeRootEventCache.get(cacheKey) === pending) {
+      const entry = hashtreeRootEventCache.get(cacheKey);
+      if (entry?.promise === pending) {
         hashtreeRootEventCache.delete(cacheKey);
       }
       return null;
     });
 
-  hashtreeRootEventCache.set(cacheKey, pending);
+  hashtreeRootEventCache.set(cacheKey, { promise: pending, expiresAt: null });
   return pending;
 }
 
