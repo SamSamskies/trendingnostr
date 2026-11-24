@@ -567,6 +567,7 @@ function putResolvedBlobEntry(
   key: string,
   entry: ResolvedBlobCacheEntry
 ): void {
+  sweepExpiredBlobEntries();
   if (resolvedBlobUrlCache.has(key)) {
     removeResolvedBlobEntry(key);
   }
@@ -593,7 +594,11 @@ function putResolvedBlobEntry(
   }
 }
 
-function takeResolvedBlobEntry(
+/**
+ * Pure cache read: no LRU touch and no `revokeObjectURL`. Safe during React
+ * render (e.g. `useState` initializers).
+ */
+function peekResolvedBlobEntry(
   rawUrl: string
 ): ResolvedBlobCacheEntry | undefined {
   const key = normalizeHtreeUrl(rawUrl);
@@ -601,6 +606,35 @@ function takeResolvedBlobEntry(
   if (!entry) return undefined;
   if (entry.expiresAt !== null && Date.now() >= entry.expiresAt) {
     // Still painted: leave bytes until the media hook refreshes / releases.
+    if (isRetainedBlobKey(key)) return entry;
+    return undefined;
+  }
+  return entry;
+}
+
+/** Drop expired, unretained entries. Call from effects / resolve / put only. */
+function sweepExpiredBlobEntries(): void {
+  for (const key of [...resolvedBlobUrlCache.keys()]) {
+    const entry = resolvedBlobUrlCache.get(key);
+    if (!entry || entry.expiresAt === null) continue;
+    if (Date.now() < entry.expiresAt) continue;
+    if (isRetainedBlobKey(key)) continue;
+    removeResolvedBlobEntry(key);
+  }
+}
+
+/**
+ * Mutating cache take for resolve / effect paths: touches LRU and sweeps
+ * expired unretained entries.
+ */
+function takeResolvedBlobEntry(
+  rawUrl: string
+): ResolvedBlobCacheEntry | undefined {
+  sweepExpiredBlobEntries();
+  const key = normalizeHtreeUrl(rawUrl);
+  const entry = resolvedBlobUrlCache.get(key);
+  if (!entry) return undefined;
+  if (entry.expiresAt !== null && Date.now() >= entry.expiresAt) {
     if (isRetainedBlobKey(key)) {
       touchResolvedBlobKey(key);
       return entry;
@@ -629,16 +663,17 @@ export function retainHtreeMediaUrl(rawUrl: string): () => void {
   };
 }
 
+/** Pure peek of a cached blob URL (no revoke). Safe during React render. */
 export function getCachedHtreeMediaUrl(rawUrl: string): string | undefined {
-  return takeResolvedBlobEntry(rawUrl)?.blobUrl;
+  return peekResolvedBlobEntry(rawUrl)?.blobUrl;
 }
 
 /**
  * Remaining TTL for a cached mutable blob, or `null` if missing / immortal.
- * Used by media hooks to refresh npub trees after the root TTL window.
+ * Pure peek — used by media hooks to schedule refresh after the root TTL.
  */
 export function getCachedHtreeMediaTtlMs(rawUrl: string): number | null {
-  const entry = takeResolvedBlobEntry(rawUrl);
+  const entry = peekResolvedBlobEntry(rawUrl);
   if (!entry || entry.expiresAt === null) return null;
   return Math.max(0, entry.expiresAt - Date.now());
 }
