@@ -521,14 +521,66 @@ export async function readHtreeMediaBytes(
  */
 const HASHTREE_MUTABLE_BLOB_TTL_MS = 5 * 60 * 1000;
 
+/**
+ * Cap decrypted `blob:` object-URL cache across the session. Evicted entries
+ * revoke their object URLs; media can be re-resolved from Blossom/chunks.
+ */
+export const MAX_HTREE_BLOB_CACHE_BYTES = 96 * 1024 * 1024;
+
 type ResolvedBlobCacheEntry = {
   blobUrl: string;
   /** `null` for immutable nhash; set for replaceable npub trees. */
   expiresAt: number | null;
+  byteLength: number;
 };
 
 const resolvedBlobUrlCache = new Map<string, ResolvedBlobCacheEntry>();
+/** LRU order: oldest at the front. */
+const resolvedBlobLruOrder: string[] = [];
+let resolvedBlobCacheBytes = 0;
 const inFlightResolutionCache = new Map<string, Promise<string | null>>();
+
+function touchResolvedBlobKey(key: string): void {
+  const idx = resolvedBlobLruOrder.indexOf(key);
+  if (idx < 0) return;
+  resolvedBlobLruOrder.splice(idx, 1);
+  resolvedBlobLruOrder.push(key);
+}
+
+function removeResolvedBlobEntry(key: string): void {
+  const entry = resolvedBlobUrlCache.get(key);
+  if (!entry) return;
+  URL.revokeObjectURL(entry.blobUrl);
+  resolvedBlobCacheBytes -= entry.byteLength;
+  resolvedBlobUrlCache.delete(key);
+  const idx = resolvedBlobLruOrder.indexOf(key);
+  if (idx >= 0) resolvedBlobLruOrder.splice(idx, 1);
+}
+
+function putResolvedBlobEntry(
+  key: string,
+  entry: ResolvedBlobCacheEntry
+): void {
+  if (resolvedBlobUrlCache.has(key)) {
+    removeResolvedBlobEntry(key);
+  }
+  resolvedBlobUrlCache.set(key, entry);
+  resolvedBlobLruOrder.push(key);
+  resolvedBlobCacheBytes += entry.byteLength;
+
+  while (
+    resolvedBlobCacheBytes > MAX_HTREE_BLOB_CACHE_BYTES &&
+    resolvedBlobLruOrder.length > 0
+  ) {
+    const oldest = resolvedBlobLruOrder[0]!;
+    if (oldest === key && resolvedBlobLruOrder.length === 1) break;
+    if (oldest === key) {
+      touchResolvedBlobKey(key);
+      continue;
+    }
+    removeResolvedBlobEntry(oldest);
+  }
+}
 
 function takeResolvedBlobEntry(
   rawUrl: string
@@ -537,10 +589,10 @@ function takeResolvedBlobEntry(
   const entry = resolvedBlobUrlCache.get(key);
   if (!entry) return undefined;
   if (entry.expiresAt !== null && Date.now() >= entry.expiresAt) {
-    URL.revokeObjectURL(entry.blobUrl);
-    resolvedBlobUrlCache.delete(key);
+    removeResolvedBlobEntry(key);
     return undefined;
   }
+  touchResolvedBlobKey(key);
   return entry;
 }
 
@@ -560,17 +612,13 @@ export function getCachedHtreeMediaTtlMs(rawUrl: string): number | null {
 
 /** Drop a cached blob URL (revokes the object URL). */
 export function invalidateHtreeMediaUrl(rawUrl: string): void {
-  const key = normalizeHtreeUrl(rawUrl);
-  const entry = resolvedBlobUrlCache.get(key);
-  if (!entry) return;
-  URL.revokeObjectURL(entry.blobUrl);
-  resolvedBlobUrlCache.delete(key);
+  removeResolvedBlobEntry(normalizeHtreeUrl(rawUrl));
 }
 
 /**
  * Resolve an `htree://` media URL to a local `blob:` URL, deduplicating
- * concurrent requests. Immutable `nhash` hits stay for the session; mutable
- * `npub` hits expire with the root-event TTL so tree updates can appear.
+ * concurrent requests. Immutable `nhash` hits stay until LRU eviction; mutable
+ * `npub` hits also expire with the root-event TTL so tree updates can appear.
  */
 export function resolveHtreeMediaUrl(rawUrl: string): Promise<string | null> {
   const key = normalizeHtreeUrl(rawUrl);
@@ -588,8 +636,9 @@ export function resolveHtreeMediaUrl(rawUrl: string): Promise<string | null> {
       const blob = new Blob([copy], { type: result.mimeType });
       const blobUrl = URL.createObjectURL(blob);
       const parsed = parseHtreeUrl(key);
-      resolvedBlobUrlCache.set(key, {
+      putResolvedBlobEntry(key, {
         blobUrl,
+        byteLength: result.bytes.byteLength,
         expiresAt:
           parsed?.type === "npub"
             ? Date.now() + HASHTREE_MUTABLE_BLOB_TTL_MS
