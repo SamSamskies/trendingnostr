@@ -222,16 +222,22 @@ test("backend local env loader includes every shared setting without browser pre
 });
 
 test("payload limits count UTF-8 bytes for raw, parsed and buffered bodies, including output injection", async () => {
-  const huge = { messages: [{ role: "user", content: "😀".repeat(26_000) }] };
+  const maxBodyBytes = 1_500_000;
+  const huge = { messages: [{ role: "user", content: "x".repeat(maxBodyBytes) }] };
   for (const body of [huge, JSON.stringify(huge), Buffer.from(JSON.stringify(huge))]) {
     assert.equal((await call({ body })).statusCode, 413);
   }
-  assert.equal((await call({ headers: { "content-length": "100001" } })).statusCode, 413);
-  // The incoming body fits, but injecting the server-owned model exceeds 100k.
-  const body = { messages: [{ role: "user", content: "😀".repeat(24_900) }], webSearch: false };
-  body.messages[0].content += "x".repeat(100_000 - Buffer.byteLength(JSON.stringify(body)));
+  assert.equal(
+    (await call({ headers: { "content-length": String(maxBodyBytes + 1) } })).statusCode,
+    413,
+  );
+  // The incoming body fits, but injecting the server-owned model exceeds the cap.
+  const body = { messages: [{ role: "user", content: "hello" }], webSearch: false };
+  body.messages[0].content += "x".repeat(
+    maxBodyBytes - Buffer.byteLength(JSON.stringify(body)),
+  );
   const input = JSON.stringify(body);
-  assert.equal(Buffer.byteLength(input), 100_000);
+  assert.equal(Buffer.byteLength(input), maxBodyBytes);
   assert.equal((await call({ body: input })).statusCode, 413);
 });
 

@@ -51,8 +51,18 @@ const ASK_AI_IMAGE_MEDIA_TYPES = new Set([
   "image/gif",
 ]);
 
-/** Cap Hashtree payloads embedded into Ask AI (base64 in the chat request). */
+type AskAiImageMediaType = "image/jpeg" | "image/png" | "image/webp" | "image/gif";
+
+/** Cap Hashtree downloads before Ask AI compression. */
 const ASK_AI_HTREE_MAX_BYTES = 5 * 1024 * 1024;
+
+/**
+ * Max decoded bytes embedded per image after compression. Keeps hosted
+ * `/api/inference` bodies under the shared 1.5MB proxy limit with note text.
+ */
+const ASK_AI_EMBED_MAX_BYTES = 350_000;
+
+const ASK_AI_EMBED_MAX_EDGE = 1280;
 
 function bytesToBase64(bytes: Uint8Array): string {
   let binary = "";
@@ -64,8 +74,62 @@ function bytesToBase64(bytes: Uint8Array): string {
 }
 
 /**
+ * Downscale / JPEG-compress large Hashtree images so hosted inference JSON
+ * stays under the proxy body cap (IPA also accepts the resulting base64 data).
+ */
+async function compressImageForAskAi(
+  bytes: Uint8Array,
+  mimeType: string
+): Promise<{ bytes: Uint8Array; mimeType: AskAiImageMediaType } | null> {
+  if (
+    bytes.byteLength <= ASK_AI_EMBED_MAX_BYTES &&
+    ASK_AI_IMAGE_MEDIA_TYPES.has(mimeType)
+  ) {
+    return { bytes, mimeType: mimeType as AskAiImageMediaType };
+  }
+
+  let bitmap: ImageBitmap;
+  try {
+    bitmap = await createImageBitmap(new Blob([bytes], { type: mimeType }));
+  } catch {
+    return null;
+  }
+
+  try {
+    const scale = Math.min(
+      1,
+      ASK_AI_EMBED_MAX_EDGE / Math.max(bitmap.width, bitmap.height, 1)
+    );
+    const width = Math.max(1, Math.round(bitmap.width * scale));
+    const height = Math.max(1, Math.round(bitmap.height * scale));
+    const canvas = document.createElement("canvas");
+    canvas.width = width;
+    canvas.height = height;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return null;
+    ctx.drawImage(bitmap, 0, 0, width, height);
+
+    let out: Blob | null = null;
+    for (let quality = 0.8; quality >= 0.4; quality -= 0.1) {
+      out = await new Promise<Blob | null>((resolve) => {
+        canvas.toBlob((blob) => resolve(blob), "image/jpeg", quality);
+      });
+      if (out && out.size <= ASK_AI_EMBED_MAX_BYTES) break;
+    }
+    if (!out || out.size > ASK_AI_EMBED_MAX_BYTES) return null;
+    return {
+      bytes: new Uint8Array(await out.arrayBuffer()),
+      mimeType: "image/jpeg",
+    };
+  } finally {
+    bitmap.close();
+  }
+}
+
+/**
  * http(s) image parts stay as URLs (proxied later for IPA). `htree://` cannot
- * be fetched by IPA or hosted inference, so embed decrypted bytes as a data URL.
+ * be fetched by IPA or hosted inference, so embed compressed bytes as
+ * `{ mediaType, data }` (base64) that both paths accept.
  */
 async function resolveNoteImagePart(url: string): Promise<ContentPart | null> {
   if (!isHtreeUrl(url)) {
@@ -75,9 +139,12 @@ async function resolveNoteImagePart(url: string): Promise<ContentPart | null> {
     maxBytes: ASK_AI_HTREE_MAX_BYTES,
   });
   if (!result || !ASK_AI_IMAGE_MEDIA_TYPES.has(result.mimeType)) return null;
+  const compressed = await compressImageForAskAi(result.bytes, result.mimeType);
+  if (!compressed) return null;
   return {
     type: "image",
-    url: `data:${result.mimeType};base64,${bytesToBase64(result.bytes)}`,
+    mediaType: compressed.mimeType,
+    data: bytesToBase64(compressed.bytes),
   };
 }
 
