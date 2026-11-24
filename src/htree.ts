@@ -8,8 +8,11 @@ import {
   fromHex,
   nhashDecode,
   objectKeyFromHex,
+  toHex,
   visibilityHex,
   type CID,
+  type Hash,
+  type Store,
 } from "@hashtree/core";
 import { nip19, type Event } from "nostr-tools";
 
@@ -25,6 +28,90 @@ export const DEFAULT_HTREE_BLOSSOM_SERVERS = [
 
 /** Cap media downloads at 50 MB so a huge file cannot exhaust tab memory. */
 export const MAX_HTREE_MEDIA_BYTES = 50 * 1024 * 1024;
+
+/**
+ * Cap in-memory Blossom chunk cache across the tab session. Chunks remain
+ * recoverable via FallbackStore → Blossom after LRU eviction.
+ */
+export const MAX_HTREE_CHUNK_CACHE_BYTES = 64 * 1024 * 1024;
+
+/**
+ * MemoryStore wrapper that evicts least-recently-used chunks when the byte
+ * budget is exceeded, so long feeds with many `htree://` attachments cannot
+ * retain unbounded ciphertext for the whole tab lifetime.
+ */
+class BoundedMemoryStore implements Store {
+  private readonly inner = new MemoryStore();
+  /** LRU order: oldest at the front. */
+  private readonly order: string[] = [];
+  private readonly sizes = new Map<string, number>();
+  private bytes = 0;
+  private readonly maxBytes: number;
+
+  constructor(maxBytes: number) {
+    this.maxBytes = maxBytes;
+  }
+
+  async put(hash: Hash, data: Uint8Array): Promise<boolean> {
+    const key = toHex(hash);
+    if (this.sizes.has(key)) {
+      this.touch(key);
+      return false;
+    }
+    const added = await this.inner.put(hash, data);
+    if (!added) {
+      this.touch(key);
+      return false;
+    }
+    this.sizes.set(key, data.byteLength);
+    this.order.push(key);
+    this.bytes += data.byteLength;
+    await this.evictIfNeeded(key);
+    return true;
+  }
+
+  async get(hash: Hash): Promise<Uint8Array | null> {
+    const data = await this.inner.get(hash);
+    if (data) this.touch(toHex(hash));
+    return data;
+  }
+
+  async has(hash: Hash): Promise<boolean> {
+    return this.inner.has(hash);
+  }
+
+  async delete(hash: Hash): Promise<boolean> {
+    const key = toHex(hash);
+    const size = this.sizes.get(key);
+    const deleted = await this.inner.delete(hash);
+    if (deleted) {
+      if (size !== undefined) this.bytes -= size;
+      this.sizes.delete(key);
+      const idx = this.order.indexOf(key);
+      if (idx >= 0) this.order.splice(idx, 1);
+    }
+    return deleted;
+  }
+
+  private touch(key: string): void {
+    const idx = this.order.indexOf(key);
+    if (idx < 0) return;
+    this.order.splice(idx, 1);
+    this.order.push(key);
+  }
+
+  private async evictIfNeeded(retainKey: string): Promise<void> {
+    while (this.bytes > this.maxBytes && this.order.length > 0) {
+      const oldest = this.order[0]!;
+      if (oldest === retainKey && this.order.length === 1) break;
+      if (oldest === retainKey) {
+        this.touch(retainKey);
+        continue;
+      }
+      await this.delete(fromHex(oldest));
+    }
+  }
+}
 
 const HEX_64 = /^[0-9a-f]{64}$/i;
 const HEX_64_OR_66 = /^[0-9a-f]{64}(?:[0-9a-f]{2})?$/i;
@@ -344,7 +431,7 @@ let sharedTree: HashTree | null = null;
 function getSharedHashTree(): HashTree {
   if (!sharedTree) {
     const store = new FallbackStore({
-      primary: new MemoryStore(),
+      primary: new BoundedMemoryStore(MAX_HTREE_CHUNK_CACHE_BYTES),
       fallbacks: [
         new BlossomStore({
           servers: DEFAULT_HTREE_BLOSSOM_SERVERS.map((server) => ({ ...server })),
