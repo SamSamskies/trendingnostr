@@ -1,10 +1,59 @@
 import { useEffect, useId, useRef, useState, type PointerEvent } from "react";
 import type { MediaKind } from "./media";
+import {
+  getCachedHtreeMediaUrl,
+  isHtreeUrl,
+  resolveHtreeMediaUrl,
+} from "./htree";
 
 export type NoteMediaItem = {
   kind: MediaKind;
   url: string;
 };
+
+export type ResolvedMediaState =
+  | { status: "ready"; src: string }
+  | { status: "loading" }
+  | { status: "error" };
+
+export function useResolvedMediaUrl(url: string): ResolvedMediaState {
+  const [state, setState] = useState<ResolvedMediaState>(() => {
+    if (!url || !isHtreeUrl(url)) return { status: "ready", src: url };
+    const cached = getCachedHtreeMediaUrl(url);
+    return cached ? { status: "ready", src: cached } : { status: "loading" };
+  });
+
+  useEffect(() => {
+    if (!url || !isHtreeUrl(url)) {
+      setState({ status: "ready", src: url });
+      return;
+    }
+
+    const cached = getCachedHtreeMediaUrl(url);
+    if (cached) {
+      setState({ status: "ready", src: cached });
+      return;
+    }
+
+    let cancelled = false;
+    setState({ status: "loading" });
+
+    void resolveHtreeMediaUrl(url).then((resolved) => {
+      if (cancelled) return;
+      if (resolved) {
+        setState({ status: "ready", src: resolved });
+      } else {
+        setState({ status: "error" });
+      }
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [url]);
+
+  return state;
+}
 
 function clampIndex(index: number, length: number): number {
   if (length <= 0) return 0;
@@ -39,6 +88,7 @@ function MediaLightbox({
   const count = items.length;
   const current = clampIndex(index, count);
   const item = items[current];
+  const resolved = useResolvedMediaUrl(item?.url ?? "");
   const onCloseRef = useRef(onClose);
   onCloseRef.current = onClose;
   const swipeRef = useRef<{
@@ -169,10 +219,18 @@ function MediaLightbox({
           onPointerUp={onSwipePointerUp}
           onPointerCancel={clearSwipe}
         >
-          {item.kind === "image" ? (
-            <img src={item.url} alt="" decoding="async" draggable={false} />
+          {resolved.status === "loading" ? (
+            <div className="note-media-lightbox-status" role="status">
+              Loading Hashtree media…
+            </div>
+          ) : resolved.status === "error" ? (
+            <div className="note-media-lightbox-status">
+              Unable to load Hashtree media
+            </div>
+          ) : item.kind === "image" ? (
+            <img src={resolved.src} alt="" decoding="async" draggable={false} />
           ) : (
-            <video key={item.url} src={item.url} controls autoPlay playsInline>
+            <video key={resolved.src} src={resolved.src} controls autoPlay playsInline>
               {item.url}
             </video>
           )}
@@ -203,6 +261,80 @@ function MediaLightbox({
   );
 }
 
+function MediaGridTile({
+  item,
+  index,
+  count,
+  onOpen,
+}: {
+  item: NoteMediaItem;
+  index: number;
+  count: number;
+  onOpen: (index: number) => void;
+}) {
+  const resolved = useResolvedMediaUrl(item.url);
+
+  if (resolved.status === "loading") {
+    return (
+      <div
+        className="note-media-grid-item note-media-grid-item-loading"
+        role="status"
+        aria-label="Loading Hashtree media"
+      >
+        <span className="note-media-status-label">Loading media…</span>
+      </div>
+    );
+  }
+
+  if (resolved.status === "error") {
+    return (
+      <div className="note-media-grid-item note-media-grid-item-error">
+        <span className="note-media-status-label">Unable to load media</span>
+      </div>
+    );
+  }
+
+  return (
+    <button
+      type="button"
+      className="note-media-grid-item"
+      aria-label={
+        item.kind === "video"
+          ? count === 1
+            ? "Play video"
+            : `Play video ${index + 1} of ${count}`
+          : count === 1
+            ? "View larger image"
+            : `View image ${index + 1} of ${count}`
+      }
+      onClick={() => onOpen(index)}
+    >
+      {item.kind === "image" ? (
+        <img
+          className="note-media-grid-thumb"
+          src={resolved.src}
+          alt=""
+          loading="lazy"
+          decoding="async"
+          draggable={false}
+        />
+      ) : (
+        <>
+          <video
+            className="note-media-grid-thumb"
+            src={resolved.src}
+            preload="metadata"
+            muted
+            playsInline
+            tabIndex={-1}
+          />
+          <PlayBadge />
+        </>
+      )}
+    </button>
+  );
+}
+
 export function MediaGrid({ items }: { items: NoteMediaItem[] }) {
   const [viewerIndex, setViewerIndex] = useState<number | null>(null);
   const count = items.length;
@@ -219,44 +351,13 @@ export function MediaGrid({ items }: { items: NoteMediaItem[] }) {
         }
       >
         {items.map((item, index) => (
-          <button
+          <MediaGridTile
             key={`${item.kind}:${item.url}:${index}`}
-            type="button"
-            className="note-media-grid-item"
-            aria-label={
-              item.kind === "video"
-                ? count === 1
-                  ? "Play video"
-                  : `Play video ${index + 1} of ${count}`
-                : count === 1
-                  ? "View larger image"
-                  : `View image ${index + 1} of ${count}`
-            }
-            onClick={() => setViewerIndex(index)}
-          >
-            {item.kind === "image" ? (
-              <img
-                className="note-media-grid-thumb"
-                src={item.url}
-                alt=""
-                loading="lazy"
-                decoding="async"
-                draggable={false}
-              />
-            ) : (
-              <>
-                <video
-                  className="note-media-grid-thumb"
-                  src={item.url}
-                  preload="metadata"
-                  muted
-                  playsInline
-                  tabIndex={-1}
-                />
-                <PlayBadge />
-              </>
-            )}
-          </button>
+            item={item}
+            index={index}
+            count={count}
+            onOpen={setViewerIndex}
+          />
         ))}
       </div>
 

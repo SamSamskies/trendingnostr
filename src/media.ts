@@ -2,6 +2,7 @@ export type MediaKind = "image" | "video";
 
 export const newlineRegex = /(\r?\n)/gi;
 export const hyperlinkRegex = /(https?:\/\/[^\s]+)/gi;
+export const htreeUriRegex = /(htree:\/\/[^\s]+)/gi;
 /** `#tag` after start/whitespace/punctuation; lookbehind keeps the boundary. */
 export const hashtagRegex = /(?<=^|[\s([{'"“‘])(#[a-zA-Z0-9_]+)/g;
 
@@ -269,7 +270,9 @@ export function classifyUrl(url: string, tags: string[][] = []): MediaKind | nul
   const fromExt = urlMediaKind(normalized);
   if (fromExt) return fromExt;
 
-  if (blossomHashFromUrl(normalized)) return "image";
+  if (!/^htree:\/\//i.test(normalized) && blossomHashFromUrl(normalized)) {
+    return "image";
+  }
 
   return null;
 }

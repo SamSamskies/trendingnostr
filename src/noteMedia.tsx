@@ -1,5 +1,9 @@
 import type { ReactNode } from "react";
-import { MediaGrid, type NoteMediaItem } from "./MediaGrid";
+import {
+  MediaGrid,
+  useResolvedMediaUrl,
+  type NoteMediaItem,
+} from "./MediaGrid";
 
 export type NoteContentToken =
   | { type: "media"; item: NoteMediaItem; key: number }
@@ -17,16 +21,34 @@ function peekNonWs(
   return undefined;
 }
 
-export function renderStandaloneMedia(
-  item: NoteMediaItem,
-  key: number
-): ReactNode {
+function StandaloneMedia({ item }: { item: NoteMediaItem }) {
+  const resolved = useResolvedMediaUrl(item.url);
+
+  if (resolved.status === "loading") {
+    return (
+      <div
+        className="note-media-placeholder"
+        role="status"
+        aria-label="Loading Hashtree media"
+      >
+        Loading media…
+      </div>
+    );
+  }
+
+  if (resolved.status === "error") {
+    return (
+      <div className="note-media-placeholder note-media-placeholder-error">
+        Unable to load media
+      </div>
+    );
+  }
+
   if (item.kind === "image") {
     return (
       <img
-        key={key}
         className="note-image"
-        src={item.url}
+        src={resolved.src}
         alt=""
         loading="lazy"
       />
@@ -34,10 +56,17 @@ export function renderStandaloneMedia(
   }
 
   return (
-    <video key={key} className="note-video" src={item.url} controls>
+    <video className="note-video" src={resolved.src} controls>
       {item.url}
     </video>
   );
+}
+
+export function renderStandaloneMedia(
+  item: NoteMediaItem,
+  key: number
+): ReactNode {
+  return <StandaloneMedia key={key} item={item} />;
 }
 
 /**

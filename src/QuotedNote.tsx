@@ -4,12 +4,14 @@ import { encodeNpub, isSafeHttpUrl, type Kind0Profile } from "./identity";
 import {
   classifyUrl,
   hashtagRegex,
+  htreeUriRegex,
   hyperlinkRegex,
   newlineRegex,
   normalizeHttpUrl,
   nostrBuildEmbedUrl,
   youtubeEmbedUrl,
 } from "./media";
+import { parseHtreeUrl } from "./htree";
 import {
   isUnmodifiedLeftClick,
   mentionLabel,
@@ -112,7 +114,7 @@ function QuoteBody({
   const emojis = parseEmojiTags(tags);
   const parts = content.split(
     new RegExp(
-      `(?:${newlineRegex.source}|${nostrUriRegex.source}|${hyperlinkRegex.source}|${lightningInvoiceRegex.source}|${hashtagRegex.source}${
+      `(?:${newlineRegex.source}|${nostrUriRegex.source}|${hyperlinkRegex.source}|${htreeUriRegex.source}|${lightningInvoiceRegex.source}|${hashtagRegex.source}${
         emojis.size > 0 ? `|${customEmojiRegex.source}` : ""
       })`,
       "gi"
@@ -203,6 +205,26 @@ function QuoteBody({
             loading="lazy"
           />
         ),
+      });
+      continue;
+    }
+
+    if (/^htree:\/\//i.test(part)) {
+      const url = normalizeHttpUrl(part);
+      if (parseHtreeUrl(url)) {
+        const media = classifyUrl(url, tags);
+        if (media === "image" || media === "video") {
+          tokens.push({
+            type: "media",
+            item: { kind: media, url },
+            key: index,
+          });
+          continue;
+        }
+      }
+      tokens.push({
+        type: "node",
+        node: <Fragment key={index}>{part}</Fragment>,
       });
       continue;
     }

@@ -1,4 +1,4 @@
-import { SimplePool, type Event } from "nostr-tools";
+import { SimplePool, verifyEvent, type Event } from "nostr-tools";
 import {
   HIDDEN_AUTHOR_PUBKEYS,
   SPAM_REPORTER_PUBKEY,
@@ -441,6 +441,67 @@ export function fetchEventByAddress(
     });
 
   eventByAddressCache.set(cacheKey, pending);
+  return pending;
+}
+
+const HASHTREE_ROOT_KINDS = [30064, 30078] as const;
+const HASHTREE_ROOT_RELAYS = ["wss://relay.iris.to"] as const;
+const hashtreeRootEventCache = new Map<string, Promise<Event | null>>();
+
+/**
+ * Fetch the latest valid Hashtree mutable root event (kind 30064, or legacy
+ * kind 30078) for an author + `d` tree name, verifying event ID and signature
+ * and applying NIP-01 replaceable-event tie-breaking.
+ */
+export function fetchHashtreeRootEvent(
+  pubkey: string,
+  treeName: string
+): Promise<Event | null> {
+  const author = pubkey.trim().toLowerCase();
+  const d = treeName;
+  if (!author || !d) return Promise.resolve(null);
+
+  const cacheKey = `${author}:${d}`;
+  const existing = hashtreeRootEventCache.get(cacheKey);
+  if (existing) return existing;
+
+  const pending = queryRelayOnce(mergeHydrationRelays(HASHTREE_ROOT_RELAYS), {
+    kinds: [...HASHTREE_ROOT_KINDS],
+    authors: [author],
+    "#d": [d],
+    limit: 10,
+  })
+    .then(({ events }) => {
+      const valid = events.filter(
+        (event) =>
+          (event.kind === 30064 || event.kind === 30078) &&
+          event.pubkey.toLowerCase() === author &&
+          event.tags.some((tag) => tag[0] === "d" && tag[1] === d) &&
+          verifyEvent(event)
+      );
+
+      // Prefer kind 30064 over legacy 30078 if both exist, then latest
+      // created_at, then lexicographically lowest event id (NIP-01).
+      valid.sort((a, b) => {
+        if (a.kind !== b.kind) return a.kind === 30064 ? -1 : 1;
+        if (a.created_at !== b.created_at) return b.created_at - a.created_at;
+        return a.id < b.id ? -1 : a.id > b.id ? 1 : 0;
+      });
+
+      const match = valid[0] ?? null;
+      if (!match && hashtreeRootEventCache.get(cacheKey) === pending) {
+        hashtreeRootEventCache.delete(cacheKey);
+      }
+      return match;
+    })
+    .catch(() => {
+      if (hashtreeRootEventCache.get(cacheKey) === pending) {
+        hashtreeRootEventCache.delete(cacheKey);
+      }
+      return null;
+    });
+
+  hashtreeRootEventCache.set(cacheKey, pending);
   return pending;
 }
 

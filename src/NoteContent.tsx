@@ -2,12 +2,14 @@ import { Fragment, useEffect, useState, type ReactNode } from "react";
 import {
   classifyUrl,
   hashtagRegex,
+  htreeUriRegex,
   hyperlinkRegex,
   newlineRegex,
   normalizeHttpUrl,
   nostrBuildEmbedUrl,
   youtubeEmbedUrl,
 } from "./media";
+import { parseHtreeUrl } from "./htree";
 import {
   isUnmodifiedLeftClick,
   mentionLabel,
@@ -316,6 +318,21 @@ function classifyPart(
     };
   }
 
+  if (/^htree:\/\//i.test(part)) {
+    const url = normalizeHttpUrl(part);
+    if (parseHtreeUrl(url)) {
+      const media = classifyUrl(url, tags);
+      if (media === "image" || media === "video") {
+        return {
+          type: "media",
+          item: { kind: media, url },
+          key: index,
+        };
+      }
+    }
+    return { type: "node", node: <Fragment key={index}>{part}</Fragment> };
+  }
+
   if (!/^https?:\/\//i.test(part)) {
     return { type: "node", node: <Fragment key={index}>{part}</Fragment> };
   }
@@ -355,7 +372,7 @@ export const NoteContent = ({
   const emojis = parseEmojiTags(tags);
   const parts = content.split(
     new RegExp(
-      `(?:${newlineRegex.source}|${nostrUriRegex.source}|${hyperlinkRegex.source}|${lightningInvoiceRegex.source}|${hashtagRegex.source}${
+      `(?:${newlineRegex.source}|${nostrUriRegex.source}|${hyperlinkRegex.source}|${htreeUriRegex.source}|${lightningInvoiceRegex.source}|${hashtagRegex.source}${
         emojis.size > 0 ? `|${customEmojiRegex.source}` : ""
       })`,
       "gi"
