@@ -91,7 +91,10 @@ async function compressImageForAskAi(
 
   let bitmap: ImageBitmap;
   try {
-    bitmap = await createImageBitmap(new Blob([bytes], { type: mimeType }));
+    // Copy into an ArrayBuffer-backed view; TS lib types reject Uint8Array<ArrayBufferLike> as BlobPart.
+    const copy = new Uint8Array(bytes.byteLength);
+    copy.set(bytes);
+    bitmap = await createImageBitmap(new Blob([copy], { type: mimeType }));
   } catch {
     return null;
   }
