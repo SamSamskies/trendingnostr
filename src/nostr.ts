@@ -457,6 +457,20 @@ type HashtreeRootCacheEntry = {
 
 const hashtreeRootEventCache = new Map<string, HashtreeRootCacheEntry>();
 
+function hashtreeRootCacheKey(pubkey: string, treeName: string): string {
+  return `${pubkey.trim().toLowerCase()}:${treeName}`;
+}
+
+/** Drop a cached mutable root so the next fetch hits relays again. */
+export function invalidateHashtreeRootEvent(
+  pubkey: string,
+  treeName: string
+): void {
+  const author = pubkey.trim().toLowerCase();
+  if (!author || !treeName) return;
+  hashtreeRootEventCache.delete(hashtreeRootCacheKey(author, treeName));
+}
+
 /**
  * Fetch the latest valid Hashtree mutable root event (kind 30064, or legacy
  * kind 30078) for an author + `d` tree name, verifying event ID and signature
@@ -470,7 +484,7 @@ export function fetchHashtreeRootEvent(
   const d = treeName;
   if (!author || !d) return Promise.resolve(null);
 
-  const cacheKey = `${author}:${d}`;
+  const cacheKey = hashtreeRootCacheKey(author, d);
   const existing = hashtreeRootEventCache.get(cacheKey);
   if (existing) {
     if (existing.expiresAt === null || Date.now() < existing.expiresAt) {

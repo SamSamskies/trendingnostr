@@ -7,6 +7,7 @@ import {
 } from "react";
 import type { MediaKind } from "./media";
 import {
+  bindHashtreeRootCacheInvalidator,
   getCachedHtreeMediaTtlMs,
   getCachedHtreeMediaUrl,
   invalidateHtreeMediaUrl,
@@ -14,6 +15,9 @@ import {
   retainHtreeMediaUrl,
   resolveHtreeMediaUrl,
 } from "./htree";
+import { invalidateHashtreeRootEvent } from "./nostr";
+
+bindHashtreeRootCacheInvalidator(invalidateHashtreeRootEvent);
 
 export type NoteMediaItem = {
   kind: MediaKind;
@@ -86,6 +90,7 @@ export function useResolvedMediaUrl(url: string): ResolvedMediaState {
           status: "error",
           retry: () => {
             srcErrorRecoveriesRef.current = 0;
+            invalidateHtreeMediaUrl(url);
             setRetryToken((token) => token + 1);
           },
         });
@@ -144,7 +149,10 @@ export function useResolvedMediaUrl(url: string): ResolvedMediaState {
         }
         setState({
           status: "error",
-          retry: () => setRetryToken((token) => token + 1),
+          retry: () => {
+            invalidateHtreeMediaUrl(url);
+            setRetryToken((token) => token + 1);
+          },
         });
       });
     };

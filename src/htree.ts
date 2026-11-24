@@ -643,9 +643,37 @@ export function getCachedHtreeMediaTtlMs(rawUrl: string): number | null {
   return Math.max(0, entry.expiresAt - Date.now());
 }
 
-/** Drop a cached blob URL (revokes the object URL). */
+type HashtreeRootCacheInvalidator = (
+  pubkey: string,
+  treeName: string
+) => void;
+
+/**
+ * Wired from the app (MediaGrid) so invalidating media can also drop the
+ * nostr root-event cache without a static htree→nostr import (keeps unit
+ * tests extensionless-import friendly).
+ */
+let invalidateRootEventCache: HashtreeRootCacheInvalidator | undefined;
+
+export function bindHashtreeRootCacheInvalidator(
+  fn: HashtreeRootCacheInvalidator
+): void {
+  invalidateRootEventCache = fn;
+}
+
+/**
+ * Drop a cached blob URL (revokes the object URL) and any in-flight resolve.
+ * For mutable `npub` trees, also clears the kind 30064 root-event cache so
+ * retries / refreshes re-query relays instead of reusing a stale root.
+ */
 export function invalidateHtreeMediaUrl(rawUrl: string): void {
-  removeResolvedBlobEntry(normalizeHtreeUrl(rawUrl));
+  const key = normalizeHtreeUrl(rawUrl);
+  removeResolvedBlobEntry(key);
+  inFlightResolutionCache.delete(key);
+  const parsed = parseHtreeUrl(key);
+  if (parsed?.type === "npub") {
+    invalidateRootEventCache?.(parsed.pubkey, parsed.treeName);
+  }
 }
 
 /**
