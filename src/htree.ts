@@ -622,9 +622,36 @@ function putResolvedBlobEntry(
   }
 }
 
+/** Drop expired, unretained entries. Call from effects / resolve / put only. */
+function sweepExpiredBlobEntries(): void {
+  for (const key of [...resolvedBlobUrlCache.keys()]) {
+    const entry = resolvedBlobUrlCache.get(key);
+    if (!entry || entry.expiresAt === null) continue;
+    if (Date.now() < entry.expiresAt) continue;
+    if (isRetainedBlobKey(key)) continue;
+    removeResolvedBlobEntry(key);
+  }
+}
+
+let expiredBlobSweepScheduled = false;
+
+/**
+ * Schedule cleanup after a pure peek observes expired rows, without revoking
+ * during React render.
+ */
+function scheduleExpiredBlobSweep(): void {
+  if (expiredBlobSweepScheduled) return;
+  expiredBlobSweepScheduled = true;
+  queueMicrotask(() => {
+    expiredBlobSweepScheduled = false;
+    sweepExpiredBlobEntries();
+  });
+}
+
 /**
  * Pure cache read: no LRU touch and no `revokeObjectURL`. Safe during React
- * render (e.g. `useState` initializers).
+ * render (e.g. `useState` initializers). Expired unretained hits schedule a
+ * microtask sweep so long sessions do not retain dead rows forever.
  */
 function peekResolvedBlobEntry(
   rawUrl: string
@@ -635,20 +662,10 @@ function peekResolvedBlobEntry(
   if (entry.expiresAt !== null && Date.now() >= entry.expiresAt) {
     // Still painted: leave bytes until the media hook refreshes / releases.
     if (isRetainedBlobKey(key)) return entry;
+    scheduleExpiredBlobSweep();
     return undefined;
   }
   return entry;
-}
-
-/** Drop expired, unretained entries. Call from effects / resolve / put only. */
-function sweepExpiredBlobEntries(): void {
-  for (const key of [...resolvedBlobUrlCache.keys()]) {
-    const entry = resolvedBlobUrlCache.get(key);
-    if (!entry || entry.expiresAt === null) continue;
-    if (Date.now() < entry.expiresAt) continue;
-    if (isRetainedBlobKey(key)) continue;
-    removeResolvedBlobEntry(key);
-  }
 }
 
 /**
