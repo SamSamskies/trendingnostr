@@ -44,6 +44,18 @@ function unloadedMediaExtraHeight(root: HTMLElement): number {
     extra += Math.max(0, minHeight - card.clientHeight);
   }
 
+  // Hashtree placeholders already have a CSS min-height (~10rem), but resolved
+  // media can be much taller (same 9:16 estimate as unloaded img/video). Count
+  // that deficit so collapse is decided before resolution. Multi-item grids keep
+  // square cells — only standalone + lone-grid loading shells need this.
+  for (const placeholder of root.querySelectorAll<HTMLElement>(
+    ".note-media-placeholder:not(.note-media-placeholder-error), .note-media-grid[data-count='1'] .note-media-grid-item-loading"
+  )) {
+    const width = placeholder.clientWidth || root.clientWidth;
+    if (width <= 0) continue;
+    extra += Math.max(0, (width * 16) / 9 - placeholder.clientHeight);
+  }
+
   return extra;
 }
 
