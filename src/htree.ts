@@ -538,8 +538,14 @@ const resolvedBlobUrlCache = new Map<string, ResolvedBlobCacheEntry>();
 /** LRU order: oldest at the front. */
 const resolvedBlobLruOrder: string[] = [];
 let resolvedBlobCacheBytes = 0;
-/** Refcounts for blob keys currently shown in the feed / lightbox. */
+/** Refcounts for blob keys currently shown in the feed / lightbox / Ask AI. */
 const retainedBlobKeys = new Map<string, number>();
+/**
+ * Object URLs removed from the cache while still retained. Revoked when the
+ * last retainer releases so mid-flight `fetch(blob:)` / painted media survive
+ * invalidate / LRU replace.
+ */
+const deferredBlobRevokes = new Map<string, Set<string>>();
 const inFlightResolutionCache = new Map<string, Promise<string | null>>();
 
 function touchResolvedBlobKey(key: string): void {
@@ -553,14 +559,36 @@ function isRetainedBlobKey(key: string): boolean {
   return (retainedBlobKeys.get(key) ?? 0) > 0;
 }
 
+function deferBlobRevoke(key: string, blobUrl: string): void {
+  let pending = deferredBlobRevokes.get(key);
+  if (!pending) {
+    pending = new Set();
+    deferredBlobRevokes.set(key, pending);
+  }
+  pending.add(blobUrl);
+}
+
+function flushDeferredBlobRevokes(key: string): void {
+  const pending = deferredBlobRevokes.get(key);
+  if (!pending) return;
+  for (const blobUrl of pending) {
+    URL.revokeObjectURL(blobUrl);
+  }
+  deferredBlobRevokes.delete(key);
+}
+
 function removeResolvedBlobEntry(key: string): void {
   const entry = resolvedBlobUrlCache.get(key);
   if (!entry) return;
-  URL.revokeObjectURL(entry.blobUrl);
   resolvedBlobCacheBytes -= entry.byteLength;
   resolvedBlobUrlCache.delete(key);
   const idx = resolvedBlobLruOrder.indexOf(key);
   if (idx >= 0) resolvedBlobLruOrder.splice(idx, 1);
+  if (isRetainedBlobKey(key)) {
+    deferBlobRevoke(key, entry.blobUrl);
+    return;
+  }
+  URL.revokeObjectURL(entry.blobUrl);
 }
 
 function putResolvedBlobEntry(
@@ -658,8 +686,12 @@ export function retainHtreeMediaUrl(rawUrl: string): () => void {
     if (released) return;
     released = true;
     const next = (retainedBlobKeys.get(key) ?? 1) - 1;
-    if (next <= 0) retainedBlobKeys.delete(key);
-    else retainedBlobKeys.set(key, next);
+    if (next <= 0) {
+      retainedBlobKeys.delete(key);
+      flushDeferredBlobRevokes(key);
+    } else {
+      retainedBlobKeys.set(key, next);
+    }
   };
 }
 
@@ -697,9 +729,10 @@ export function bindHashtreeRootCacheInvalidator(
 }
 
 /**
- * Drop a cached blob URL (revokes the object URL) and any in-flight resolve.
- * For mutable `npub` trees, also clears the kind 30064 root-event cache so
- * retries / refreshes re-query relays instead of reusing a stale root.
+ * Drop a cached blob entry and any in-flight resolve. Object URLs are revoked
+ * immediately unless still retained (Ask AI fetch / on-screen media); those
+ * are revoked when the last retainer releases. For mutable `npub` trees, also
+ * clears the kind 30064 root-event cache so retries re-query relays.
  */
 export function invalidateHtreeMediaUrl(rawUrl: string): void {
   const key = normalizeHtreeUrl(rawUrl);
