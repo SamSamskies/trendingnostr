@@ -16,9 +16,13 @@ export type NoteMediaItem = {
 export type ResolvedMediaState =
   | { status: "ready"; src: string }
   | { status: "loading" }
-  | { status: "error" };
+  | { status: "error"; retry: () => void };
+
+/** Auto-retries after the first failure before surfacing a permanent error. */
+const HTREE_AUTO_RETRY_DELAYS_MS = [1_000, 3_000] as const;
 
 export function useResolvedMediaUrl(url: string): ResolvedMediaState {
+  const [retryToken, setRetryToken] = useState(0);
   const [state, setState] = useState<ResolvedMediaState>(() => {
     if (!url || !isHtreeUrl(url)) return { status: "ready", src: url };
     const cached = getCachedHtreeMediaUrl(url);
@@ -32,7 +36,20 @@ export function useResolvedMediaUrl(url: string): ResolvedMediaState {
     }
 
     let cancelled = false;
+    let attempt = 0;
     let refreshTimer: ReturnType<typeof setTimeout> | undefined;
+    let autoRetryTimer: ReturnType<typeof setTimeout> | undefined;
+
+    const clearTimers = () => {
+      if (refreshTimer !== undefined) {
+        clearTimeout(refreshTimer);
+        refreshTimer = undefined;
+      }
+      if (autoRetryTimer !== undefined) {
+        clearTimeout(autoRetryTimer);
+        autoRetryTimer = undefined;
+      }
+    };
 
     const scheduleMutableRefresh = () => {
       const ttl = getCachedHtreeMediaTtlMs(url);
@@ -45,10 +62,7 @@ export function useResolvedMediaUrl(url: string): ResolvedMediaState {
     };
 
     const load = () => {
-      if (refreshTimer !== undefined) {
-        clearTimeout(refreshTimer);
-        refreshTimer = undefined;
-      }
+      clearTimers();
 
       const cached = getCachedHtreeMediaUrl(url);
       if (cached) {
@@ -63,9 +77,20 @@ export function useResolvedMediaUrl(url: string): ResolvedMediaState {
         if (resolved) {
           setState({ status: "ready", src: resolved });
           scheduleMutableRefresh();
-        } else {
-          setState({ status: "error" });
+          return;
         }
+        if (attempt < HTREE_AUTO_RETRY_DELAYS_MS.length) {
+          const delay = HTREE_AUTO_RETRY_DELAYS_MS[attempt]!;
+          attempt += 1;
+          autoRetryTimer = setTimeout(() => {
+            if (!cancelled) load();
+          }, delay);
+          return;
+        }
+        setState({
+          status: "error",
+          retry: () => setRetryToken((token) => token + 1),
+        });
       });
     };
 
@@ -73,9 +98,9 @@ export function useResolvedMediaUrl(url: string): ResolvedMediaState {
 
     return () => {
       cancelled = true;
-      if (refreshTimer !== undefined) clearTimeout(refreshTimer);
+      clearTimers();
     };
-  }, [url]);
+  }, [url, retryToken]);
 
   return state;
 }
@@ -250,7 +275,14 @@ function MediaLightbox({
             </div>
           ) : resolved.status === "error" ? (
             <div className="note-media-lightbox-status">
-              Unable to load Hashtree media
+              <span>Unable to load Hashtree media</span>
+              <button
+                type="button"
+                className="note-media-retry"
+                onClick={resolved.retry}
+              >
+                Try again
+              </button>
             </div>
           ) : item.kind === "image" ? (
             <img src={resolved.src} alt="" decoding="async" draggable={false} />
@@ -315,6 +347,13 @@ function MediaGridTile({
     return (
       <div className="note-media-grid-item note-media-grid-item-error">
         <span className="note-media-status-label">Unable to load media</span>
+        <button
+          type="button"
+          className="note-media-retry"
+          onClick={resolved.retry}
+        >
+          Try again
+        </button>
       </div>
     );
   }

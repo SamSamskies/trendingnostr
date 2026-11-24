@@ -39,7 +39,14 @@ function StandaloneMedia({ item }: { item: NoteMediaItem }) {
   if (resolved.status === "error") {
     return (
       <div className="note-media-placeholder note-media-placeholder-error">
-        Unable to load media
+        <span className="note-media-status-label">Unable to load media</span>
+        <button
+          type="button"
+          className="note-media-retry"
+          onClick={resolved.retry}
+        >
+          Try again
+        </button>
       </div>
     );
   }
