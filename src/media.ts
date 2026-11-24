@@ -280,8 +280,9 @@ export function classifyUrl(url: string, tags: string[][] = []): MediaKind | nul
 const MAX_NOTE_IMAGES = 8;
 
 /**
- * Image URLs on a note: inline http(s) links classified as images, plus `imeta`
- * urls that are images (even when not repeated in the body). Videos skipped.
+ * Image URLs on a note: inline http(s) / `htree://` links classified as images,
+ * plus `imeta` urls that are images (even when not repeated in the body).
+ * Videos skipped.
  */
 export function noteImageUrls(
   content: string,
@@ -299,6 +300,9 @@ export function noteImageUrls(
   };
 
   for (const match of content.matchAll(new RegExp(hyperlinkRegex.source, "gi"))) {
+    add(match[0]);
+  }
+  for (const match of content.matchAll(new RegExp(htreeUriRegex.source, "gi"))) {
     add(match[0]);
   }
   for (const entry of parseImeta(tags)) {

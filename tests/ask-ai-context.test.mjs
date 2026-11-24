@@ -132,6 +132,21 @@ test("note images dedupe the same Blossom blob across different hosts", () => {
   );
 });
 
+test("note images include inline htree:// image links", () => {
+  const htree =
+    "htree://nhash1qqsfhmyh6rmela8esm9wjr4yv5k60yk48mt6rmh264tc7fn9570qxnq9yyqasrsxzatlgexxljuxqtrykqt39lrlnxjzsjzqwc9mszd6fm9lgsg09w5kl/1692-01.jpg";
+  assert.deepEqual(
+    noteImageUrls(`Photo\n\n${htree}\n\nhttps://cdn.example/also.png`),
+    ["https://cdn.example/also.png", htree],
+  );
+  assert.deepEqual(
+    noteImageUrls(
+      "htree://nhash1qqs2h2at4w46h2at4w46h2at4w46h2at4w46h2at4w46h2at4w46h2cym3cqn/clip.mp4"
+    ),
+    [],
+  );
+});
+
 test("a newer clock refreshes the system prompt without looking like the note changed", () => {
   const earlier = new Date("2026-10-29T13:02:00Z");
   const later = new Date("2026-10-29T14:15:00Z");
