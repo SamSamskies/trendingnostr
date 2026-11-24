@@ -603,22 +603,30 @@ function putResolvedBlobEntry(
   resolvedBlobLruOrder.push(key);
   resolvedBlobCacheBytes += entry.byteLength;
 
-  let scanned = 0;
-  while (
-    resolvedBlobCacheBytes > MAX_HTREE_BLOB_CACHE_BYTES &&
-    resolvedBlobLruOrder.length > 0 &&
-    scanned < resolvedBlobLruOrder.length
-  ) {
-    const oldest = resolvedBlobLruOrder[0]!;
-    scanned += 1;
-    if (oldest === key && resolvedBlobLruOrder.length === 1) break;
-    // Keep blobs that are still on screen; rotate them to the MRU end.
-    if (oldest === key || isRetainedBlobKey(oldest)) {
-      touchResolvedBlobKey(oldest);
-      continue;
+  // Prefer dropping unretained rows. If the feed still exceeds the byte cap
+  // (every tile retains), drop oldest retained cache rows too — deferred revoke
+  // keeps their object URLs alive until release, but cache accounting stays
+  // under MAX_HTREE_BLOB_CACHE_BYTES so a long session cannot grow without bound.
+  for (const evictRetained of [false, true]) {
+    let scanned = 0;
+    while (
+      resolvedBlobCacheBytes > MAX_HTREE_BLOB_CACHE_BYTES &&
+      resolvedBlobLruOrder.length > 1 &&
+      scanned < resolvedBlobLruOrder.length
+    ) {
+      const oldest = resolvedBlobLruOrder[0]!;
+      scanned += 1;
+      if (oldest === key) {
+        touchResolvedBlobKey(oldest);
+        continue;
+      }
+      if (!evictRetained && isRetainedBlobKey(oldest)) {
+        touchResolvedBlobKey(oldest);
+        continue;
+      }
+      removeResolvedBlobEntry(oldest);
+      scanned = 0;
     }
-    removeResolvedBlobEntry(oldest);
-    scanned = 0;
   }
 }
 
