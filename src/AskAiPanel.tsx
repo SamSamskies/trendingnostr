@@ -38,6 +38,7 @@ import { encodeNpub, type Kind0Profile } from "./identity";
 import {
   isHtreeUrl,
   MAX_HTREE_MEDIA_BYTES,
+  retainHtreeMediaUrl,
   resolveHtreeMediaUrl,
 } from "./htree";
 import { noteImageUrls } from "./media";
@@ -143,34 +144,40 @@ async function resolveNoteImagePart(url: string): Promise<ContentPart | null> {
     return { type: "image", url };
   }
 
-  const blobUrl = await resolveHtreeMediaUrl(url);
-  if (!blobUrl) return null;
-
-  let bytes: Uint8Array;
-  let mimeType: string;
+  // Pin across resolve + fetch so concurrent LRU eviction cannot revoke mid-read.
+  const release = retainHtreeMediaUrl(url);
   try {
-    const blob = await (await fetch(blobUrl)).blob();
-    if (blob.size === 0 || blob.size > MAX_HTREE_MEDIA_BYTES) return null;
-    bytes = new Uint8Array(await blob.arrayBuffer());
-    mimeType = blob.type || "application/octet-stream";
-  } catch {
-    return null;
-  }
+    const blobUrl = await resolveHtreeMediaUrl(url);
+    if (!blobUrl) return null;
 
-  if (
-    !ASK_AI_IMAGE_MEDIA_TYPES.has(mimeType) &&
-    mimeType !== "application/octet-stream"
-  ) {
-    return null;
-  }
+    let bytes: Uint8Array;
+    let mimeType: string;
+    try {
+      const blob = await (await fetch(blobUrl)).blob();
+      if (blob.size === 0 || blob.size > MAX_HTREE_MEDIA_BYTES) return null;
+      bytes = new Uint8Array(await blob.arrayBuffer());
+      mimeType = blob.type || "application/octet-stream";
+    } catch {
+      return null;
+    }
 
-  const compressed = await compressImageForAskAi(bytes, mimeType);
-  if (!compressed) return null;
-  return {
-    type: "image",
-    mediaType: compressed.mimeType,
-    data: bytesToBase64(compressed.bytes),
-  };
+    if (
+      !ASK_AI_IMAGE_MEDIA_TYPES.has(mimeType) &&
+      mimeType !== "application/octet-stream"
+    ) {
+      return null;
+    }
+
+    const compressed = await compressImageForAskAi(bytes, mimeType);
+    if (!compressed) return null;
+    return {
+      type: "image",
+      mediaType: compressed.mimeType,
+      data: bytesToBase64(compressed.bytes),
+    };
+  } finally {
+    release();
+  }
 }
 
 function linkifyInferenceBridge(text: string) {
