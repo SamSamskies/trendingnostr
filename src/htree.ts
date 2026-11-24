@@ -726,11 +726,19 @@ export function resolveHtreeMediaUrl(rawUrl: string): Promise<string | null> {
 
   const pending = readHtreeMediaBytes(key)
     .then((result) => {
+      // Invalidate / a newer resolve may have replaced this in-flight entry.
+      if (inFlightResolutionCache.get(key) !== pending) {
+        return takeResolvedBlobEntry(key)?.blobUrl ?? null;
+      }
       if (!result) return null;
       const copy = new Uint8Array(result.bytes.byteLength);
       copy.set(result.bytes);
       const blob = new Blob([copy], { type: result.mimeType });
       const blobUrl = URL.createObjectURL(blob);
+      if (inFlightResolutionCache.get(key) !== pending) {
+        URL.revokeObjectURL(blobUrl);
+        return takeResolvedBlobEntry(key)?.blobUrl ?? null;
+      }
       const parsed = parseHtreeUrl(key);
       putResolvedBlobEntry(key, {
         blobUrl,
