@@ -515,20 +515,66 @@ export async function readHtreeMediaBytes(
   return { bytes, mimeType };
 }
 
-const resolvedBlobUrlCache = new Map<string, string>();
+/**
+ * Match HASHTREE_ROOT_CACHE_TTL_MS in nostr.ts so mutable npub media refreshes
+ * when replaceable roots are allowed to update.
+ */
+const HASHTREE_MUTABLE_BLOB_TTL_MS = 5 * 60 * 1000;
+
+type ResolvedBlobCacheEntry = {
+  blobUrl: string;
+  /** `null` for immutable nhash; set for replaceable npub trees. */
+  expiresAt: number | null;
+};
+
+const resolvedBlobUrlCache = new Map<string, ResolvedBlobCacheEntry>();
 const inFlightResolutionCache = new Map<string, Promise<string | null>>();
 
+function takeResolvedBlobEntry(
+  rawUrl: string
+): ResolvedBlobCacheEntry | undefined {
+  const key = normalizeHtreeUrl(rawUrl);
+  const entry = resolvedBlobUrlCache.get(key);
+  if (!entry) return undefined;
+  if (entry.expiresAt !== null && Date.now() >= entry.expiresAt) {
+    URL.revokeObjectURL(entry.blobUrl);
+    resolvedBlobUrlCache.delete(key);
+    return undefined;
+  }
+  return entry;
+}
+
 export function getCachedHtreeMediaUrl(rawUrl: string): string | undefined {
-  return resolvedBlobUrlCache.get(normalizeHtreeUrl(rawUrl));
+  return takeResolvedBlobEntry(rawUrl)?.blobUrl;
+}
+
+/**
+ * Remaining TTL for a cached mutable blob, or `null` if missing / immortal.
+ * Used by media hooks to refresh npub trees after the root TTL window.
+ */
+export function getCachedHtreeMediaTtlMs(rawUrl: string): number | null {
+  const entry = takeResolvedBlobEntry(rawUrl);
+  if (!entry || entry.expiresAt === null) return null;
+  return Math.max(0, entry.expiresAt - Date.now());
+}
+
+/** Drop a cached blob URL (revokes the object URL). */
+export function invalidateHtreeMediaUrl(rawUrl: string): void {
+  const key = normalizeHtreeUrl(rawUrl);
+  const entry = resolvedBlobUrlCache.get(key);
+  if (!entry) return;
+  URL.revokeObjectURL(entry.blobUrl);
+  resolvedBlobUrlCache.delete(key);
 }
 
 /**
  * Resolve an `htree://` media URL to a local `blob:` URL, deduplicating
- * concurrent requests and caching successful resolutions for the session.
+ * concurrent requests. Immutable `nhash` hits stay for the session; mutable
+ * `npub` hits expire with the root-event TTL so tree updates can appear.
  */
 export function resolveHtreeMediaUrl(rawUrl: string): Promise<string | null> {
   const key = normalizeHtreeUrl(rawUrl);
-  const cached = resolvedBlobUrlCache.get(key);
+  const cached = takeResolvedBlobEntry(key)?.blobUrl;
   if (cached) return Promise.resolve(cached);
 
   const inFlight = inFlightResolutionCache.get(key);
@@ -541,7 +587,14 @@ export function resolveHtreeMediaUrl(rawUrl: string): Promise<string | null> {
       copy.set(result.bytes);
       const blob = new Blob([copy], { type: result.mimeType });
       const blobUrl = URL.createObjectURL(blob);
-      resolvedBlobUrlCache.set(key, blobUrl);
+      const parsed = parseHtreeUrl(key);
+      resolvedBlobUrlCache.set(key, {
+        blobUrl,
+        expiresAt:
+          parsed?.type === "npub"
+            ? Date.now() + HASHTREE_MUTABLE_BLOB_TTL_MS
+            : null,
+      });
       return blobUrl;
     })
     .catch(() => null)

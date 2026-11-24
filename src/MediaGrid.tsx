@@ -1,7 +1,9 @@
 import { useEffect, useId, useRef, useState, type PointerEvent } from "react";
 import type { MediaKind } from "./media";
 import {
+  getCachedHtreeMediaTtlMs,
   getCachedHtreeMediaUrl,
+  invalidateHtreeMediaUrl,
   isHtreeUrl,
   resolveHtreeMediaUrl,
 } from "./htree";
@@ -29,26 +31,49 @@ export function useResolvedMediaUrl(url: string): ResolvedMediaState {
       return;
     }
 
-    const cached = getCachedHtreeMediaUrl(url);
-    if (cached) {
-      setState({ status: "ready", src: cached });
-      return;
-    }
-
     let cancelled = false;
-    setState({ status: "loading" });
+    let refreshTimer: ReturnType<typeof setTimeout> | undefined;
 
-    void resolveHtreeMediaUrl(url).then((resolved) => {
-      if (cancelled) return;
-      if (resolved) {
-        setState({ status: "ready", src: resolved });
-      } else {
-        setState({ status: "error" });
+    const scheduleMutableRefresh = () => {
+      const ttl = getCachedHtreeMediaTtlMs(url);
+      if (ttl === null) return;
+      refreshTimer = setTimeout(() => {
+        if (cancelled) return;
+        invalidateHtreeMediaUrl(url);
+        load();
+      }, ttl + 1);
+    };
+
+    const load = () => {
+      if (refreshTimer !== undefined) {
+        clearTimeout(refreshTimer);
+        refreshTimer = undefined;
       }
-    });
+
+      const cached = getCachedHtreeMediaUrl(url);
+      if (cached) {
+        setState({ status: "ready", src: cached });
+        scheduleMutableRefresh();
+        return;
+      }
+
+      setState({ status: "loading" });
+      void resolveHtreeMediaUrl(url).then((resolved) => {
+        if (cancelled) return;
+        if (resolved) {
+          setState({ status: "ready", src: resolved });
+          scheduleMutableRefresh();
+        } else {
+          setState({ status: "error" });
+        }
+      });
+    };
+
+    load();
 
     return () => {
       cancelled = true;
+      if (refreshTimer !== undefined) clearTimeout(refreshTimer);
     };
   }, [url]);
 
