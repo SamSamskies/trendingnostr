@@ -167,9 +167,11 @@ test("reads file inside an encrypted directory tree via immutable nhash and muta
   assert.equal(await extractRootCidFromEvent(mockEvent), null);
 });
 
-test("detects MIME type from extension and falls back to magic bytes", () => {
+test("detects MIME type from magic bytes and falls back to extension", () => {
   const pngBytes = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
-  assert.equal(detectMediaMimeType("pic.webp", pngBytes), "image/webp");
+  assert.equal(detectMediaMimeType("pic.webp", pngBytes), "image/png");
   assert.equal(detectMediaMimeType(undefined, pngBytes), "image/png");
   assert.equal(detectMediaMimeType("noext", pngBytes), "image/png");
+  assert.equal(detectMediaMimeType("pic.jpg", new Uint8Array([0x00, 0x01])), "image/jpeg");
+  assert.equal(detectMediaMimeType(undefined, new Uint8Array([0x00, 0x01])), "application/octet-stream");
 });

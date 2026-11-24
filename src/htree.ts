@@ -323,6 +323,10 @@ export function detectMediaMimeType(
   filename: string | undefined,
   bytes: Uint8Array
 ): string {
+  // Prefer magic bytes: advisory htree:// filenames can disagree with content.
+  const fromMagic = mimeFromMagicBytes(bytes);
+  if (fromMagic) return fromMagic;
+
   if (filename) {
     const dot = filename.lastIndexOf(".");
     if (dot > 0) {
@@ -332,7 +336,7 @@ export function detectMediaMimeType(
       }
     }
   }
-  return mimeFromMagicBytes(bytes) ?? "application/octet-stream";
+  return "application/octet-stream";
 }
 
 let sharedTree: HashTree | null = null;
