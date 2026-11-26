@@ -40,6 +40,7 @@ import {
   isReplyEngagementKind,
   trendingFeedNoteLimit,
   trendingFeedMinEngagementPoints,
+  trendingFeedMinScore,
   engagementPoints,
   scoreTrendingNote,
   rankTrendingNotes,
@@ -63,6 +64,7 @@ export {
   MIN_ENGAGEMENT_POINTS,
   trendingFeedNoteLimit,
   trendingFeedMinEngagementPoints,
+  trendingFeedMinScore,
   engagementPoints,
   RELAY_ALIGNED_TRENDING_HOURS,
   WINE_MIN_REQUEST_INTERVAL_MS,
@@ -721,7 +723,8 @@ async function toTrendingFeed(
     rankTrendingNotes(visible, engagement, { vertexProfilePubkeys }),
     engagement,
     trendingFeedNoteLimit(hours),
-    trendingFeedMinEngagementPoints(hours)
+    trendingFeedMinEngagementPoints(hours),
+    { minScore: trendingFeedMinScore(hours) }
   );
   return {
     notes: limited.notes,
@@ -782,6 +785,9 @@ function applyClientFeedFilters(
     (note) => !HIDDEN_AUTHOR_PUBKEYS.has(note.pubkey.toLowerCase())
   );
 
+  // Skip the score floor here: the server already applied it at build time with
+  // a frozen clock. Re-running with live Date.now() only drifts borderline
+  // notes as the CDN blob ages. Engagement floor stays (time-invariant).
   const limited = limitTrendingFeed(
     visible,
     feed.engagementById,
