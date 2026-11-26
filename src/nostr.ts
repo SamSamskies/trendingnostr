@@ -788,12 +788,14 @@ function applyClientFeedFilters(
     (note) => !HIDDEN_AUTHOR_PUBKEYS.has(note.pubkey.toLowerCase())
   );
 
+  // Skip the score floor here: the server already applied it at build time with
+  // a frozen clock. Re-running with live Date.now() only drifts borderline
+  // notes as the CDN blob ages. Engagement floor stays (time-invariant).
   const limited = limitTrendingFeed(
     visible,
     feed.engagementById,
     trendingFeedNoteLimit(hours),
-    trendingFeedMinEngagementPoints(hours),
-    { minScore: trendingFeedMinScore(hours) }
+    trendingFeedMinEngagementPoints(hours)
   );
   return {
     notes: limited.notes,
