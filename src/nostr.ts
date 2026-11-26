@@ -40,6 +40,7 @@ import {
   isReplyEngagementKind,
   trendingFeedNoteLimit,
   trendingFeedMinEngagementPoints,
+  trendingFeedMinScore,
   engagementPoints,
   scoreTrendingNote,
   rankTrendingNotes,
@@ -63,6 +64,7 @@ export {
   MIN_ENGAGEMENT_POINTS,
   trendingFeedNoteLimit,
   trendingFeedMinEngagementPoints,
+  trendingFeedMinScore,
   engagementPoints,
   RELAY_ALIGNED_TRENDING_HOURS,
   WINE_MIN_REQUEST_INTERVAL_MS,
@@ -721,7 +723,11 @@ async function toTrendingFeed(
     rankTrendingNotes(visible, engagement, { vertexProfilePubkeys }),
     engagement,
     trendingFeedNoteLimit(hours),
-    trendingFeedMinEngagementPoints(hours)
+    trendingFeedMinEngagementPoints(hours),
+    {
+      minScore: trendingFeedMinScore(hours),
+      vertexProfilePubkeys,
+    }
   );
   return {
     notes: limited.notes,
@@ -786,7 +792,8 @@ function applyClientFeedFilters(
     visible,
     feed.engagementById,
     trendingFeedNoteLimit(hours),
-    trendingFeedMinEngagementPoints(hours)
+    trendingFeedMinEngagementPoints(hours),
+    { minScore: trendingFeedMinScore(hours) }
   );
   return {
     notes: limited.notes,

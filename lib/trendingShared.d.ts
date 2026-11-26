@@ -7,6 +7,8 @@ export declare const TRENDING_FEED_NOTE_LIMIT_12H: number;
 export declare const MIN_ENGAGEMENT_POINTS: number;
 export declare function trendingFeedNoteLimit(hours: number): number;
 export declare function trendingFeedMinEngagementPoints(hours: number): number;
+/** HN score floor: min engagement decayed at the window edge. */
+export declare function trendingFeedMinScore(hours: number): number;
 export declare const RELAY_ALIGNED_TRENDING_HOURS: 48;
 export declare const WINE_MIN_REQUEST_INTERVAL_MS: number;
 
@@ -98,11 +100,22 @@ export declare function rankTrendingNotes<
   options?: RankTrendingNotesOptions
 ): T[];
 
+export type LimitTrendingFeedOptions = RankTrendingNotesOptions & {
+  minScore?: number;
+};
+
 export declare function limitTrendingFeed<
-  T extends { id: string; tags?: string[][]; content?: string },
+  T extends {
+    id: string;
+    created_at?: number;
+    pubkey?: string;
+    tags?: string[][];
+    content?: string;
+  },
 >(
   notes: T[],
   engagementById: Record<string, NoteEngagement>,
   limit?: number,
-  minEngagementPoints?: number
+  minEngagementPoints?: number,
+  options?: LimitTrendingFeedOptions
 ): { notes: T[]; engagementById: Record<string, NoteEngagement> };
