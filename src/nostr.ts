@@ -724,10 +724,7 @@ async function toTrendingFeed(
     engagement,
     trendingFeedNoteLimit(hours),
     trendingFeedMinEngagementPoints(hours),
-    {
-      minScore: trendingFeedMinScore(hours),
-      vertexProfilePubkeys,
-    }
+    { minScore: trendingFeedMinScore(hours) }
   );
   return {
     notes: limited.notes,

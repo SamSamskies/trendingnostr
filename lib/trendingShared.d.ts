@@ -100,8 +100,10 @@ export declare function rankTrendingNotes<
   options?: RankTrendingNotesOptions
 ): T[];
 
-export type LimitTrendingFeedOptions = RankTrendingNotesOptions & {
+/** Score floor ignores Vertex (ranking-only); content demotion still applies. */
+export type LimitTrendingFeedOptions = {
   minScore?: number;
+  nowSec?: number;
 };
 
 export declare function limitTrendingFeed<
